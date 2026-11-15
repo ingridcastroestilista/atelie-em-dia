@@ -45,7 +45,9 @@ p { margin: 8px 0; }
 .marca { display: flex; align-items: center; gap: 12px; margin: 4px 0 16px; }
 .marca img { border-radius: 10px; }
 .marca p { margin: 2px 0 0; color: var(--ink-2); font-size: 15px; }
-.engrenagem { margin-left: auto; font-size: 24px; text-decoration: none; color: var(--ink-2); padding: 10px; min-width: 48px; text-align: center; }
+.engrenagem { margin-left: auto; flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--cinza); font-size: 32px; line-height: 1; text-decoration: none; color: var(--ink-2); }
+.engrenagem svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.engrenagem:active { background: var(--marsala-claro); color: var(--marsala); }
 .topo { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0 16px; }
 .topo p { margin: 6px 0 0; color: var(--ink-2); font-size: 15px; }
 .topo p a { color: var(--marsala); font-weight: 500; }
