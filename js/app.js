@@ -101,7 +101,12 @@ function rota() {
   return { nome: telas[nome] ? nome : 'semana', id, extra };
 }
 
+let ultimoRender = 0;
+let redesenhoPendente = false; // data ou hora mudou e a tela ainda não foi atualizada
+
 function render() {
+  ultimoRender = Date.now();
+  redesenhoPendente = false;
   const { nome, id, extra } = rota();
   if (ui.recem && ui.recem.id !== id) ui.recem = null;
   telaAtual = telas[nome];
@@ -1220,9 +1225,26 @@ document.addEventListener('input', (ev) => {
   }
 });
 
+// Saiu do campo de data ou hora: atualiza a tela um instante depois. Se ela tocou num botão,
+// o botão já redesenha; se foi para outro campo, espera ela sair dele também.
+document.addEventListener('focusout', () => {
+  if (!redesenhoPendente) return;
+  const pedido = Date.now();
+  setTimeout(() => {
+    if (!redesenhoPendente || ultimoRender > pedido) return;
+    const ativo = document.activeElement;
+    if (ativo && $main.contains(ativo) && ['INPUT', 'TEXTAREA'].includes(ativo.tagName)) return;
+    const y = window.scrollY;
+    render();
+    window.scrollTo(0, y);
+  }, 350);
+});
+
 document.addEventListener('change', (ev) => {
   const el = ev.target;
-  if (el.dataset?.bind && ['date', 'time'].includes(el.type)) { setPath(el.dataset.bind, el.value); render(); return; }
+  // Data e hora: só guarda. Redesenhar agora fecharia o calendário do celular no meio da escolha
+  // (o iPhone já preenche a data de hoje ao abrir). A tela atualiza quando ela sai do campo.
+  if (el.dataset?.bind && ['date', 'time'].includes(el.type)) { setPath(el.dataset.bind, el.value); redesenhoPendente = true; return; }
   if (el.dataset?.bind === 'capacidadeMes') { setPath('capacidadeMes', Math.max(0, Math.round(Number(el.value) || 0))); render(); return; }
   if (el.dataset?.acao === 'importar' && el.files[0]) {
     if (!confirm('Restaurar este backup? Os dados atuais deste aparelho serão substituídos.')) { el.value = ''; return; }

@@ -1,6 +1,6 @@
 // Guarda o app no celular para abrir sem internet.
 // Ao publicar uma versão nova, mude VERSAO para o celular baixar os arquivos novos.
-const VERSAO = 'ad-v7';
+const VERSAO = 'ad-v8';
 const ARQUIVOS = [
   './', 'index.html', 'css/app.css', 'js/app.js', 'js/regras.js', 'js/store.js', 'js/lembrete.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
