@@ -1,5 +1,6 @@
 // Dados guardados só no celular (localStorage), backup em arquivo.
 import { hojeISO, migrarEtapas } from './regras.js';
+import { ORIENTACOES_PADRAO } from './lembrete.js';
 
 const CHAVE = 'atelie-em-dia:v1';
 const VERSAO = 1;
@@ -18,7 +19,7 @@ function inicial() {
   return {
     versao: VERSAO,
     criadoEm: agora(),
-    atelie: { nome: '' },
+    atelie: { nome: '', endereco: '', whatsapp: '', orientacoes: structuredClone(ORIENTACOES_PADRAO) },
     capacidadeMes: 0, // quantas encomendas ela dá conta por mês (0 = não definido)
     modelos: [],      // listas de etapas salvas por ela (ex.: Noiva)
     ultimoModelo: '', // o modelo escolhido na última encomenda
@@ -48,6 +49,8 @@ export function carregar() {
 export const get = () => state;
 
 function migrar() {
+  // Quem já usava o app ganha os campos novos do ateliê, com as orientações sugeridas.
+  state.atelie = { endereco: '', whatsapp: '', orientacoes: structuredClone(ORIENTACOES_PADRAO), ...state.atelie };
   state.encomendas.forEach(migrarEtapas);
   state.alugueis.forEach(migrarEtapas);
 }
