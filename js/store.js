@@ -30,6 +30,7 @@ function inicial() {
     ultimoBackup: null,
     avisoInstalarVisto: false,
     boasVindasVista: false,
+    // inicioFeito: definido no primeiro uso (app.js), para quem já tinha dados não ver as boas-vindas
   };
 }
 

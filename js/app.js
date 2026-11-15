@@ -107,9 +107,12 @@ let redesenhoPendente = false; // data ou hora mudou e a tela ainda não foi atu
 function render() {
   ultimoRender = Date.now();
   redesenhoPendente = false;
-  const { nome, id, extra } = rota();
+  let { nome, id, extra } = rota();
+  // Primeiro acesso (ou o resumo "Tudo pronto!" logo depois dele) no lugar da tela inicial.
+  if (nome === 'semana' && (!S().inicioFeito || ui.comecar > PASSOS_ATELIE)) nome = 'comecar';
   if (ui.recem && ui.recem.id !== id) ui.recem = null;
   telaAtual = telas[nome];
+  if (nome === 'comecar') { $main.innerHTML = telaAtual.render(); document.body.dataset.tela = nome; telaAtual.depois?.(); return; }
   $main.innerHTML = telaAtual.render(id, extra) + (ui.notas ? folhaNotas() : '');
   document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('ativo', a.dataset.tela === (telaAtual.aba || nome)));
   document.body.dataset.tela = nome;
@@ -203,6 +206,16 @@ function linhaCompromisso(c, atrasado = false) {
 
 const legenda = () => `<p class="legenda">${Object.entries(GRUPOS).map(([k, t]) => `<span class="g-${k}"><i></i>${t}</span>`).join('')}</p>`;
 
+// Para quem adiou o primeiro acesso, ou já usava o app sem os dados do ateliê.
+function cartaoCompletarAtelie() {
+  const a = S().atelie;
+  const falta = [!a.nome && 'nome', !a.whatsapp && 'WhatsApp', !a.endereco && 'endereço'].filter(Boolean);
+  if (!falta.length) return '';
+  return cartao(`<h2>Complete os dados do seu ateliê</h2>
+    <p>Falta${falta.length > 1 ? 'm' : ''} ${falta.join(', ').replace(/, ([^,]*)$/, ' e $1')}. Eles aparecem nos lembretes que você manda para as clientes.</p>
+    <button class="btn" data-acao="comecarDeNovo">Completar agora</button>`, 'destaque');
+}
+
 telas.semana = {
   render() {
     const s = S();
@@ -221,7 +234,7 @@ telas.semana = {
         <h2>Bem-vinda ao seu ateliê em dia</h2>
         <p>Aqui aparece tudo o que vence nos próximos 7 dias: provas, entregas, retiradas e devoluções. Comece registrando o que está em andamento agora.</p>
         <a class="btn grande" href="#/novo">Registrar a primeira encomenda</a>
-        <p class="ajuda">Só 3 coisas: o nome da cliente, a peça e a data do evento.</p>
+        <p class="ajuda">O cadastro é guiado, uma pergunta por vez.</p>
       `, 'destaque') : `
         ${sem.atrasados.length || sem.semana.length ? legenda() : ''}
         ${(sem.atrasados.length || sem.semana.length) && !s.dicaConcluirVista ? '<p class="dica-concluir">Terminou? Toque no botão e a tarefa sai da lista.</p>' : ''}
@@ -233,6 +246,7 @@ telas.semana = {
           : '<p class="vazio-curto">Nada nos próximos 6 dias. Toque em <b>+ Novo</b> para registrar uma encomenda ou um aluguel.</p>'}
         ${sem.depois.length ? `<a class="mais" href="#/proximos">Depois desta semana: ${sem.depois.length} compromisso${sem.depois.length > 1 ? 's' : ''} ›</a>` : ''}
       `}
+      ${cartaoCompletarAtelie()}
       ${avisoInstalar()}
       ${avisoBackup()}
     `;
@@ -895,6 +909,82 @@ telas.lembrete = {
   },
 };
 
+function editorOrientacoes() {
+  const o = S().atelie.orientacoes;
+  return [['provas', 'Provas e medidas'], ['aluguel', 'Aluguel (retirada e devolução)']].map(([g, t]) => `
+    <h3>${t}</h3>
+    ${o[g].map((txt, i) => `<div class="orient">
+      ${area(`atelie.orientacoes.${g}.${i}`, txt, 'rows="2" aria-label="Orientação"')}
+      <button class="ed-btn tirar" data-acao="tirarOrient" data-g="${g}" data-i="${i}" aria-label="Tirar orientação">Tirar</button></div>`).join('')}
+    <button class="link" data-acao="addOrient" data-g="${g}">+ Acrescentar orientação</button>`).join('');
+}
+
+// ---------- Primeiro acesso: os dados do ateliê, uma vez só ----------
+
+const PASSOS_ATELIE = 4;
+const cabComecar = (n, titulo, ajuda) => `
+  <header class="topo">
+    <button class="voltar" data-acao="comecarVoltar" aria-label="Voltar">‹</button>
+    <div><span class="passo-de">Passo ${n} de ${PASSOS_ATELIE}</span><h1>${titulo}</h1>${ajuda ? `<p>${ajuda}</p>` : ''}</div>
+  </header>`;
+const botoesComecar = (texto = 'Continuar') => `<button class="btn grande" data-acao="comecarProximo">${texto}</button>
+  <button class="btn grande sec" data-acao="comecarProximo">Pular por enquanto</button>`;
+
+telas.comecar = {
+  render() {
+    const a = S().atelie;
+    const passo = ui.comecar || 0;
+    if (passo === 0) {
+      return `<div class="boas-vindas">
+          <img src="icons/icon.svg" alt="" width="88" height="88">
+          <h1>Bem-vinda ao Ateliê em Dia</h1>
+          <p>Antes de começar, ${PASSOS_ATELIE} perguntas rápidas sobre o seu ateliê. Você só faz isso uma vez.</p>
+          <p class="ajuda">Esses dados aparecem nos lembretes que você manda para as clientes.</p>
+        </div>
+        <button class="btn grande" data-acao="comecarProximo">Começar</button>
+        <button class="btn grande sec" data-acao="comecarDepois">Fazer depois</button>`;
+    }
+    if (passo === 1) {
+      return `${cabComecar(1, 'Qual é o nome do seu ateliê?', 'Aparece no topo dos lembretes.')}
+        ${cartao(rotulo('Nome do ateliê', campo('atelie.nome', a.nome, 'text', 'autocapitalize="words" placeholder="Ex.: Ateliê Ingrid Castro"')))}
+        <button class="btn grande" data-acao="comecarProximo">Continuar</button>`;
+    }
+    if (passo === 2) {
+      return `${cabComecar(2, 'Qual é o WhatsApp do ateliê?', 'Para a cliente falar com você. Vai no rodapé dos lembretes.')}
+        ${cartao(rotulo('WhatsApp do ateliê', campo('atelie.whatsapp', a.whatsapp, 'tel', 'inputmode="tel" placeholder="(11) 98765-4321"')))}
+        ${botoesComecar()}`;
+    }
+    if (passo === 3) {
+      return `${cabComecar(3, 'Onde fica o ateliê?', 'Para a cliente saber onde é a prova.')}
+        ${cartao(rotulo('Endereço', campo('atelie.endereco', a.endereco, 'text', 'placeholder="Ex.: Rua das Flores, 120, sala 3, Centro"')))}
+        ${botoesComecar()}`;
+    }
+    if (passo === 4) {
+      return `${cabComecar(4, 'O que a cliente precisa saber?', 'Estas orientações vão no lembrete antes de cada prova ou aluguel. Já deixamos algumas sugestões: mude, tire ou acrescente.')}
+        ${cartao(editorOrientacoes())}
+        ${cartao(`<label class="limite"><span>Limite de sob medida por mês <small>(opcional)</small></span>
+          <input type="number" inputmode="numeric" min="0" data-bind="capacidadeMes" value="${S().capacidadeMes || ''}" placeholder="Ex.: 6"></label>
+          <p class="ajuda">Ajuda a não aceitar mais encomendas do que dá conta. Aluguel não consome o limite.</p>`)}
+        <button class="btn grande" data-acao="comecarProximo">Concluir</button>`;
+    }
+    // Fim: resumo
+    const linha = (rot, val) => `<dt>${rot}</dt><dd>${val ? esc(val) : '<span class="falta">não informado</span>'}</dd>`;
+    return `<div class="feito-topo"><span class="feito-check" aria-hidden="true">✓</span>
+        <h1>Tudo pronto!</h1><p>Você pode mudar esses dados quando quiser em <b>Ajustes</b> (⚙︎).</p></div>
+      ${cartao(`<dl class="resumo">
+        ${linha('Ateliê', a.nome)}${linha('WhatsApp', a.whatsapp)}${linha('Endereço', a.endereco)}
+        ${linha('Orientações', `${a.orientacoes.provas.filter((x) => x.trim()).length + a.orientacoes.aluguel.filter((x) => x.trim()).length}`)}
+        ${linha('Limite por mês', S().capacidadeMes ? `${S().capacidadeMes} sob medida` : '')}
+      </dl>`)}
+      <h2 class="secao">E agora?</h2>
+      <div class="acoes coluna">
+        <a class="btn grande" href="#/novo/encomenda" data-acao="outroNovo" data-tipo="encomenda">Registrar a primeira encomenda</a>
+        <button class="btn sec" data-acao="comecarFim">Ir para a semana</button>
+      </div>`;
+  },
+  depois() { $main.querySelector('input')?.focus(); },
+};
+
 // ---------- Tela: Ajustes ----------
 
 telas.ajustes = {
@@ -909,12 +999,7 @@ telas.ajustes = {
         ${rotulo('WhatsApp do ateliê', campo('atelie.whatsapp', s.atelie.whatsapp, 'tel', 'inputmode="tel" placeholder="(11) 98765-4321"'))}`, '', 'id="seu-atelie"')}
       ${cartao(`<h2>Orientações para a cliente</h2>
         <p class="ajuda">Vão no lembrete antes de cada compromisso. Mude o texto, tire ou acrescente.</p>
-        ${[['provas', 'Provas e medidas'], ['aluguel', 'Aluguel (retirada e devolução)']].map(([g, t]) => `
-          <h3>${t}</h3>
-          ${s.atelie.orientacoes[g].map((o, i) => `<div class="orient">
-            ${area(`atelie.orientacoes.${g}.${i}`, o, 'rows="2" aria-label="Orientação"')}
-            <button class="ed-btn tirar" data-acao="tirarOrient" data-g="${g}" data-i="${i}" aria-label="Tirar orientação">Tirar</button></div>`).join('')}
-          <button class="link" data-acao="addOrient" data-g="${g}">+ Acrescentar orientação</button>`).join('')}`)}
+        ${editorOrientacoes()}`)}
       ${cartao(`<h2>Modelos de etapas</h2>
         ${s.modelos.length ? `<div class="lista">${s.modelos.map((m) => `<div class="linha-lista"><div><b>${esc(m.nome)}</b><span>${m.etapas.length} etapas</span></div>
           <button class="btn perigo peq" data-acao="apagarModelo" data-id="${m.id}">Apagar</button></div>`).join('')}</div>`
@@ -1086,6 +1171,15 @@ const acoes = {
   },
   addOrient(el) { S().atelie.orientacoes[el.dataset.g].push(''); store.salvar(); render(); const t = [...document.querySelectorAll(`[data-bind^="atelie.orientacoes.${el.dataset.g}."]`)].pop(); t?.focus(); },
   tirarOrient(el) { S().atelie.orientacoes[el.dataset.g].splice(Number(el.dataset.i), 1); store.salvar(); render(); },
+  comecarProximo() {
+    ui.comecar = (ui.comecar || 0) + 1;
+    if (ui.comecar > PASSOS_ATELIE) { S().inicioFeito = true; store.salvar(); }
+    render(); window.scrollTo(0, 0);
+  },
+  comecarFim() { ui.comecar = 0; render(); window.scrollTo(0, 0); },
+  comecarVoltar() { ui.comecar = Math.max(0, (ui.comecar || 0) - 1); render(); window.scrollTo(0, 0); },
+  comecarDepois() { S().inicioFeito = true; ui.comecar = 0; store.salvar(); render(); },
+  comecarDeNovo() { S().inicioFeito = false; ui.comecar = 1; render(); window.scrollTo(0, 0); },
   salvarCliente() {
     const nome = ui.novaCliente.nome.trim();
     if (!nome) return toast('Escreva o nome da cliente.');
@@ -1272,17 +1366,22 @@ document.addEventListener('keydown', (ev) => {
   const campos = [...$main.querySelectorAll('input:not([type=hidden]), textarea')];
   const i = campos.indexOf(ev.target);
   if (i >= 0 && campos[i + 1]) { ev.preventDefault(); campos[i + 1].focus(); return; }
-  const avancar = $main.querySelector('[data-acao="proximoPasso"]');
+  const avancar = $main.querySelector('[data-acao="proximoPasso"], [data-acao="comecarProximo"]');
   if (avancar) { ev.preventDefault(); avancar.click(); }
 });
 
-window.addEventListener('hashchange', () => { ui.notas = null; ui.editEtapas = null; render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => {
+  ui.notas = null; ui.editEtapas = null;
+  if (rota().nome !== 'semana') ui.comecar = 0; // saiu do primeiro acesso
+  render(); window.scrollTo(0, 0);
+});
 window.addEventListener('pagehide', store.gravar);
 document.addEventListener('visibilitychange', () => { if (document.hidden) store.gravar(); });
 
 store.carregar();
 // Garante os campos novos do ateliê mesmo se o celular ainda tiver um arquivo antigo guardado.
 S().atelie = { nome: '', endereco: '', whatsapp: '', orientacoes: structuredClone(ORIENTACOES_PADRAO), ...S().atelie };
+if (S().inicioFeito === undefined) S().inicioFeito = !!(S().atelie.nome || S().encomendas.length || S().alugueis.length || S().clientes.length);
 store.pedirArmazenamentoPersistente();
 render();
 

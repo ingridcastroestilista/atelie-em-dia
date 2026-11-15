@@ -335,3 +335,9 @@ button.voltar { background: none; border: 0; cursor: pointer; font-family: inher
 .orient { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
 .orient textarea { flex: 1; min-height: 50px; font-size: 16px; }
 .orient .ed-btn { flex: none; }
+
+/* Primeiro acesso */
+.boas-vindas { text-align: center; padding: 24px 8px 8px; }
+.boas-vindas img { border-radius: 22px; margin-bottom: 12px; }
+.boas-vindas h1 { margin-bottom: 8px; }
+.limite small { font-weight: 400; color: var(--ink-3); }
