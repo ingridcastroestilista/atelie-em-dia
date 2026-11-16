@@ -1,4 +1,5 @@
 import * as store from './store.js';
+import { protegerApp } from './acesso.js';
 import { conteudoFicha, imagemFicha } from './ficha.js';
 import { guardarFoto, enderecoFoto, apagarFoto, limparSoltas } from './fotos.js';
 import { tipoLembrete, conteudoLembrete, textoLembrete, imagemLembrete, ORIENTACOES_PADRAO } from './lembrete.js';
@@ -1639,5 +1640,6 @@ S().atelie = { nome: '', endereco: '', whatsapp: '', orientacoes: structuredClon
 if (S().inicioFeito === undefined) S().inicioFeito = !!(S().atelie.nome || S().encomendas.length || S().alugueis.length || S().clientes.length);
 store.pedirArmazenamentoPersistente();
 render();
+protegerApp({ nome: 'Ateliê em Dia', icone: 'icons/icon-192.png', cor: '#6E2A3C' });
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
