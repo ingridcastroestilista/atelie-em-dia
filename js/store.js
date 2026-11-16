@@ -1,5 +1,5 @@
 // Dados guardados só no celular (localStorage), backup em arquivo.
-import { hojeISO, migrarEtapas, fotosUsadas } from './regras.js';
+import { hojeISO, migrarEtapas, fotosUsadas, PRAZOS_PADRAO } from './regras.js';
 import { fotosParaBackup, restaurarFotos, apagarTodas } from './fotos.js';
 import { ORIENTACOES_PADRAO } from './lembrete.js';
 
@@ -69,6 +69,8 @@ function inicial() {
     criadoEm: agora(),
     atelie: { nome: '', endereco: '', whatsapp: '', orientacoes: structuredClone(ORIENTACOES_PADRAO) },
     medidasOcultas: [], // medidas do guia que ela não usa
+    prazosAluguel: { ...PRAZOS_PADRAO }, // retirada, devolução, higienização e folga, em dias
+    mensagens: { prova: '', pronta: '', final: '' }, // textos prontos mudados por ela (vazio = original)
     capacidadeMes: 0, // quantas encomendas ela dá conta por mês (0 = não definido)
     modelos: [],      // listas de etapas salvas por ela (ex.: Noiva)
     ultimoModelo: '', // o modelo escolhido na última encomenda
@@ -102,6 +104,8 @@ function migrar() {
   // Quem já usava o app ganha os campos novos do ateliê, com as orientações sugeridas.
   state.atelie = { endereco: '', whatsapp: '', orientacoes: structuredClone(ORIENTACOES_PADRAO), ...state.atelie };
   if (!Array.isArray(state.medidasOcultas)) state.medidasOcultas = [];
+  state.prazosAluguel = { ...PRAZOS_PADRAO, ...state.prazosAluguel };
+  state.mensagens = { prova: '', pronta: '', final: '', ...state.mensagens };
   state.encomendas.forEach(migrarEtapas);
   state.alugueis.forEach(migrarEtapas);
 }

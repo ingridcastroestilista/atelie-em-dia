@@ -6,7 +6,7 @@ import { uid, agora, tocar, MEDIDAS, GRUPOS_MEDIDAS, acharCliente, clientePorNom
 import {
   hojeISO, somaDias, diasEntre, dataBR, diaMes, quando, etapasEncomenda, etapasAluguel, infoEtapa, adicionarEtapa, removerEtapa,
   moverEtapa, modeloDe, VERSAO_ETAPAS, etapa, provaAnterior, marcarEtapa, semana, periodo, conflitos, situacaoPeca, arquivoAgenda, linkGoogleAgenda,
-  linkWhats, mensagemProva, mensagemPronta, RETIRADA_ANTES, DEVOLUCAO_DEPOIS, apertados, DIAS_HIGIENIZACAO, GRUPOS, resumoMeses, somaMeses, lotacao,
+  linkWhats, mensagemProva, mensagemPronta, MENSAGENS_PADRAO, apertados, prazos, PRAZOS_PADRAO, configurarPrazos, prazoValido, GRUPOS, resumoMeses, somaMeses, lotacao,
   formatarTelefone, fotosUsadas,
 } from './regras.js';
 
@@ -149,12 +149,19 @@ function rota() {
 let ultimoRender = 0;
 let redesenhoPendente = false; // data ou hora mudou e a tela ainda não foi atualizada
 
+// "retirada 2 dias antes" / "devolução no dia do evento"
+function txtPrazo(n, quando, nome = 'retirada') {
+  if (!n) return `${nome} no dia do evento`;
+  return `${nome} ${n} dia${n > 1 ? 's' : ''} ${quando}`;
+}
+
 // Selo discreto no fim de todas as telas.
 const SELO = '<p class="selo">Desenvolvido por <b>Ingrid Castro Academy</b></p>';
 
 function render() {
   ultimoRender = Date.now();
   redesenhoPendente = false;
+  configurarPrazos(S().prazosAluguel); // prazos do aluguel escolhidos em Ajustes
   let { nome, id, extra } = rota();
   // Primeiro acesso (ou o resumo "Tudo pronto!" logo depois dele) no lugar da tela inicial.
   if (nome === 'semana' && (!S().inicioFeito || ui.comecar > PASSOS_ATELIE)) nome = 'comecar';
@@ -373,9 +380,9 @@ function avisosApertados(lista) {
 
 function avisoConflito(n) {
   if (!n.pecaId || !n.evento) return '';
-  const ini = n.retirada || somaDias(n.evento, -RETIRADA_ANTES);
-  const dev = n.devolucao || somaDias(n.evento, DEVOLUCAO_DEPOIS);
-  const fim = somaDias(dev, DIAS_HIGIENIZACAO);
+  const ini = n.retirada || somaDias(n.evento, -prazos.retirada);
+  const dev = n.devolucao || somaDias(n.evento, prazos.devolucao);
+  const fim = somaDias(dev, prazos.higienizacao);
   const cs = conflitos(S().alugueis, n.pecaId, ini, fim);
   const ap = apertados(S().alugueis, n.pecaId, ini, fim);
   if (!cs.length && ap.length) return avisosApertados(ap);
@@ -425,10 +432,10 @@ telas.novo = {
           </div></div>` : ''}
           ${tipo === 'aluguel' && n.evento ? `
             <div class="duplo">
-              ${rotulo('Retirada', campo('ui.novo.retirada', n.retirada || somaDias(n.evento, -RETIRADA_ANTES), 'date'))}
-              ${rotulo('Devolução', campo('ui.novo.devolucao', n.devolucao || somaDias(n.evento, DEVOLUCAO_DEPOIS), 'date'))}
+              ${rotulo('Retirada', campo('ui.novo.retirada', n.retirada || somaDias(n.evento, -prazos.retirada), 'date'))}
+              ${rotulo('Devolução', campo('ui.novo.devolucao', n.devolucao || somaDias(n.evento, prazos.devolucao), 'date'))}
             </div>
-            <p class="ajuda">Sugestão: retirada ${RETIRADA_ANTES} dias antes e devolução ${DEVOLUCAO_DEPOIS} dia depois. Pode mudar.</p>
+            <p class="ajuda">Sugestão: ${txtPrazo(prazos.retirada, 'antes')} e ${txtPrazo(prazos.devolucao, 'depois', 'devolução')}. Pode mudar. <a href="#/ajustes">Mudar a sugestão</a></p>
             ${avisoConflito(n)}` : ''}
         `)}
         <button class="btn grande" data-acao="proximoPasso">Continuar</button>`;
@@ -591,8 +598,8 @@ function cartaoWhats(item, cliente) {
   const prox = item.etapas.find((e) => infoEtapa(item, e).prova && e.data && !e.feitaEm);
   return cartao(`<h2>WhatsApp da cliente</h2>
     <div class="acoes coluna">
-      ${prox ? `<a class="btn sec" target="_blank" rel="noopener" href="${esc(linkWhats(cliente.whatsapp, mensagemProva(cliente.nome, prox.data, prox.hora)))}">Confirmar: ${esc(infoEtapa(item, prox).nome)}</a>` : ''}
-      <a class="btn sec" target="_blank" rel="noopener" href="${esc(linkWhats(cliente.whatsapp, mensagemPronta(cliente.nome, item.peca)))}">Avisar que está pronta</a>
+      ${prox ? `<a class="btn sec" target="_blank" rel="noopener" href="${esc(linkWhats(cliente.whatsapp, mensagemProva(cliente.nome, prox.data, prox.hora, S().mensagens)))}">Confirmar: ${esc(infoEtapa(item, prox).nome)}</a>` : ''}
+      <a class="btn sec" target="_blank" rel="noopener" href="${esc(linkWhats(cliente.whatsapp, mensagemPronta(cliente.nome, item.peca, S().mensagens)))}">Avisar que está pronta</a>
       <a class="link" target="_blank" rel="noopener" href="${esc(linkWhats(cliente.whatsapp, ''))}">Abrir a conversa</a>
     </div>`);
 }
@@ -962,7 +969,7 @@ function dadosLembrete(id, k) {
   const item = s.encomendas.find((x) => x.id === id) || s.alugueis.find((x) => x.id === id);
   if (!item || !etapa(item, k)?.data || !tipoLembrete(item, k)) return null;
   const cliente = acharCliente(item.clienteId);
-  return { item, k, cliente, conteudo: conteudoLembrete({ item, k, cliente, peca: nomePeca(item), atelie: s.atelie }) };
+  return { item, k, cliente, conteudo: conteudoLembrete({ item, k, cliente, peca: nomePeca(item), atelie: s.atelie, mensagens: s.mensagens }) };
 }
 
 let imagemAtual = null;
@@ -1125,6 +1132,21 @@ telas.ajustes = {
       ${cartao(`<h2>Medidas</h2>
         <p class="ajuda">As 38 medidas do guia aparecem na medição. Tire as que você não usa.</p>
         <a class="btn sec" href="#/escolherMedidas">Escolher medidas (${MEDIDAS.length - S().medidasOcultas.filter((k) => MEDIDAS.includes(k)).length} de ${MEDIDAS.length})</a>`)}
+      ${cartao(`<h2>Mensagens prontas</h2>
+        <p class="ajuda">Os textos que o app monta para mandar no WhatsApp. Mude do seu jeito. As palavras entre chaves são trocadas sozinhas: <b>{nome}</b> vira o nome da cliente, <b>{quando}</b> o dia e a hora, <b>{peca}</b> a peça.</p>
+        ${[['prova', 'Confirmar a prova', 'Na encomenda, botão "Confirmar".'], ['pronta', 'Avisar que está pronta', 'Na encomenda, botão "Avisar que está pronta".'],
+          ['final', 'Final do lembrete', 'A última frase do lembrete de prova, entrega e aluguel.']]
+          .map(([k, t, onde]) => `<div class="msg-edit">${rotulo(t, area(`mensagens.${k}`, S().mensagens?.[k] || MENSAGENS_PADRAO[k], `rows="${k === 'final' ? 2 : 3}"`), onde)}
+            ${S().mensagens?.[k]?.trim() && S().mensagens[k] !== MENSAGENS_PADRAO[k] ? `<button class="link" data-acao="mensagemOriginal" data-k="${k}">Voltar ao texto original</button>` : ''}</div>`).join('')}`)}
+      ${cartao(`<h2>Prazos do aluguel</h2>
+        <p class="ajuda">Usados para sugerir as datas de cada aluguel novo e para o calendário dos vestidos. Em cada aluguel você ainda pode mudar a retirada e a devolução.</p>
+        <div class="prazos">
+          ${[['retirada', 'Retirada', 'dias antes do evento'], ['devolucao', 'Devolução', 'dias depois do evento'],
+            ['higienizacao', 'Higienização', 'dias depois da devolução'], ['folga', 'Avisar "data apertada"', 'com até quantos dias livres entre dois aluguéis']]
+            .map(([k, t, ajuda]) => `<label class="prazo"><span><b>${t}</b><small>${ajuda}</small></span>
+              <input type="number" inputmode="numeric" min="0" max="30" data-bind="prazosAluguel.${k}" value="${esc(S().prazosAluguel?.[k] ?? PRAZOS_PADRAO[k])}"></label>`).join('')}
+        </div>
+        <p class="ajuda">Mudar a higienização vale também para os aluguéis já cadastrados: o vestido fica bloqueado esse tempo depois de cada devolução.</p>`, '', 'id="prazos-aluguel"')}
       ${cartao(`<h2>Modelos de etapas</h2>
         ${s.modelos.length ? `<div class="lista">${s.modelos.map((m) => `<div class="linha-lista"><div><b>${esc(m.nome)}</b><span>${m.etapas.length} etapas</span></div>
           <button class="btn perigo peq" data-acao="apagarModelo" data-id="${m.id}">Apagar</button></div>`).join('')}</div>`
@@ -1448,6 +1470,7 @@ const acoes = {
     if (!confirm(`Apagar ${c.nome}? As medidas, as encomendas, os aluguéis e as fotos dela também serão apagados. Isso não pode ser desfeito.`)) return;
     store.apagarCliente(c.id); store.salvar(); limparFotosDepois(); toast('Cliente apagada'); ir('#/clientes');
   },
+  mensagemOriginal(el) { S().mensagens[el.dataset.k] = ''; store.salvar(); toast('Texto original de volta'); const y = window.scrollY; render(); window.scrollTo(0, y); },
   verFoto(el) { ui.foto = { alvo: el.dataset.alvo, id: el.dataset.id }; const y = window.scrollY; render(); window.scrollTo(0, y); },
   fecharFoto() { ui.foto = null; const y = window.scrollY; render(); window.scrollTo(0, y); },
   async apagarFoto() {
@@ -1536,6 +1559,11 @@ document.addEventListener('change', (ev) => {
   // (o iPhone já preenche a data de hoje ao abrir). A tela atualiza quando ela sai do campo.
   if (el.dataset?.bind && ['date', 'time'].includes(el.type)) { setPath(el.dataset.bind, el.value); redesenhoPendente = true; return; }
   if (el.dataset?.bind && el.type === 'tel') { el.value = formatarTelefone(el.value); setPath(el.dataset.bind, el.value); return; }
+  if (el.dataset?.bind?.startsWith('prazosAluguel.')) {
+    const k = el.dataset.bind.split('.')[1];
+    S().prazosAluguel[k] = prazoValido(k, el.value === '' ? PRAZOS_PADRAO[k] : el.value);
+    store.salvar(); toast('Prazo salvo'); const y = window.scrollY; render(); window.scrollTo(0, y); return;
+  }
   if (el.dataset?.bind === 'capacidadeMes') { setPath('capacidadeMes', Math.max(0, Math.round(Number(el.value) || 0))); render(); return; }
   if (el.dataset?.acao === 'addFoto' && el.files.length) {
     const alvo = el.dataset.alvo;
@@ -1605,6 +1633,8 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) store
 store.carregar();
 // Garante os campos novos do ateliê mesmo se o celular ainda tiver um arquivo antigo guardado.
 if (!Array.isArray(S().medidasOcultas)) S().medidasOcultas = [];
+S().prazosAluguel = { ...PRAZOS_PADRAO, ...S().prazosAluguel };
+S().mensagens = { prova: '', pronta: '', final: '', ...S().mensagens };
 S().atelie = { nome: '', endereco: '', whatsapp: '', orientacoes: structuredClone(ORIENTACOES_PADRAO), ...S().atelie };
 if (S().inicioFeito === undefined) S().inicioFeito = !!(S().atelie.nome || S().encomendas.length || S().alugueis.length || S().clientes.length);
 store.pedirArmazenamentoPersistente();

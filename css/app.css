@@ -408,3 +408,15 @@ button.voltar { background: none; border: 0; cursor: pointer; font-family: inher
 /* Selo de quem desenvolveu */
 .selo { margin: 36px 0 8px; text-align: center; font: 400 12px var(--sans); letter-spacing: .02em; color: var(--ink-3); }
 .selo b { font-weight: 600; color: var(--marsala); }
+
+/* Prazos do aluguel */
+.prazos { margin: 6px 0; }
+.prazo { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.prazo:last-child { border-bottom: 0; }
+.prazo span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.prazo b { font-weight: 600; font-size: 16px; }
+.prazo small { font-size: 13px; color: var(--ink-2); }
+.prazo input { flex: none; width: 72px; text-align: center; font-size: 18px; font-weight: 600; }
+
+.msg-edit { margin-top: 6px; }
+.msg-edit .link { padding: 0 0 8px; font-size: 14px; }

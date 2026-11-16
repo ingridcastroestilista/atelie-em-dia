@@ -1,5 +1,5 @@
 // Lembrete para a cliente: texto e imagem para o WhatsApp, com a data, o endereço e as orientações do ateliê.
-import { hojeISO, diasEntre, dataBR, infoEtapa, etapa } from './regras.js';
+import { hojeISO, diasEntre, dataBR, infoEtapa, etapa, fraseFinal } from './regras.js';
 
 export const ORIENTACOES_PADRAO = {
   provas: [
@@ -50,7 +50,7 @@ export function quandoLongo(data, hora, hoje = hojeISO()) {
 }
 
 // Tudo o que vai no lembrete, já separado (o texto e a imagem usam o mesmo conteúdo).
-export function conteudoLembrete({ item, k, cliente, peca, atelie }, hoje = hojeISO()) {
+export function conteudoLembrete({ item, k, cliente, peca, atelie, mensagens }, hoje = hojeISO()) {
   const tipo = tipoLembrete(item, k);
   const e = etapa(item, k);
   const nome = primeiroNome(cliente?.nome);
@@ -74,6 +74,7 @@ export function conteudoLembrete({ item, k, cliente, peca, atelie }, hoje = hoje
     tituloOrient: tipo === 'medidas' ? 'Para tirar as medidas' : tipo === 'prova' ? 'Para a sua prova' : 'Importante',
     atelie: (atelie?.nome || '').trim(),
     whatsapp: (atelie?.whatsapp || '').trim(),
+    final: fraseFinal(mensagens),
   };
 }
 
@@ -86,7 +87,7 @@ export function textoLembrete(c) {
     c.endereco ? `📍 ${c.endereco}` : null,
     ...(c.orientacoes.length ? ['', `*${c.tituloOrient}:*`, ...c.orientacoes.map((o) => `• ${o}`)] : []),
     '',
-    'Qualquer dúvida, é só me chamar aqui.',
+    c.final,
   ].filter((l) => l !== null).join('\n');
 }
 
@@ -130,7 +131,7 @@ export async function imagemLembrete(c) {
     add(c.tituloOrient.toUpperCase(), `600 28px ${sans}`, MARSALA, 56, { espaco: true });
     c.orientacoes.forEach((o, i) => add(o, `400 36px ${sans}`, '#2B2522', i ? 14 : 20, { marca: '•', recuo: 40 }));
   }
-  add('Qualquer dúvida, é só me chamar.', `400 32px ${sans}`, '#6B6B6B', 56);
+  add(c.final, `400 32px ${sans}`, '#6B6B6B', 56);
 
   const topo = 170;
   const corpo = blocos.reduce((t, b) => t + b.antes + b.ls.length * b.alt + (b.caixa ? 40 : 0), 0);

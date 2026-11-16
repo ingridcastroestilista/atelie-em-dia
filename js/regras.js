@@ -66,6 +66,20 @@ export const RETIRADA_ANTES = 2;
 export const DEVOLUCAO_DEPOIS = 1;
 export const DIAS_HIGIENIZACAO = 2;
 
+// Prazos do aluguel que ela escolhe em Ajustes (começam com os valores acima).
+export const PRAZOS_PADRAO = { retirada: RETIRADA_ANTES, devolucao: DEVOLUCAO_DEPOIS, higienizacao: DIAS_HIGIENIZACAO, folga: 2 };
+export const prazos = { ...PRAZOS_PADRAO };
+const LIMITES_PRAZO = { retirada: [0, 30], devolucao: [0, 30], higienizacao: [0, 30], folga: [0, 30] };
+export function prazoValido(k, v) {
+  const n = Math.round(Number(v));
+  const [min, max] = LIMITES_PRAZO[k];
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : PRAZOS_PADRAO[k];
+}
+export function configurarPrazos(p = {}) {
+  for (const k of Object.keys(PRAZOS_PADRAO)) prazos[k] = p[k] === undefined || p[k] === '' ? PRAZOS_PADRAO[k] : prazoValido(k, p[k]);
+  return prazos;
+}
+
 const novaEtapa = (k, data = '') => ({ k, data, hora: '', feitaEm: null, notas: '', agendaEm: null });
 const chaveNova = () => `c${Math.random().toString(36).slice(2, 8)}`;
 
@@ -101,8 +115,8 @@ export function modeloDe(item, nome) {
 export function etapasAluguel(evento, hoje = hojeISO()) {
   return ETAPAS_ALUGUEL.map((e) => {
     if (e.k === 'reservado') return { ...novaEtapa(e.k), feitaEm: hoje };
-    if (e.k === 'retirada') return novaEtapa(e.k, somaDias(evento, -RETIRADA_ANTES));
-    if (e.k === 'devolucao') return novaEtapa(e.k, somaDias(evento, DEVOLUCAO_DEPOIS));
+    if (e.k === 'retirada') return novaEtapa(e.k, somaDias(evento, -prazos.retirada));
+    if (e.k === 'devolucao') return novaEtapa(e.k, somaDias(evento, prazos.devolucao));
     return novaEtapa(e.k);
   });
 }
@@ -263,9 +277,9 @@ export function lotacao(qtd, limite) {
 
 // A peça fica ocupada da retirada até a devolução, mais os dias de higienização.
 export function periodo(alu) {
-  const ini = etapa(alu, 'retirada').data || somaDias(alu.evento, -RETIRADA_ANTES);
-  const dev = etapa(alu, 'devolucao').data || somaDias(alu.evento, DEVOLUCAO_DEPOIS);
-  return { ini, fim: somaDias(dev, DIAS_HIGIENIZACAO), devolucao: dev };
+  const ini = etapa(alu, 'retirada').data || somaDias(alu.evento, -prazos.retirada);
+  const dev = etapa(alu, 'devolucao').data || somaDias(alu.evento, prazos.devolucao);
+  return { ini, fim: somaDias(dev, prazos.higienizacao), devolucao: dev };
 }
 
 export function conflitos(alugueis, pecaId, ini, fim, ignorarId = null) {
@@ -277,9 +291,9 @@ export function conflitos(alugueis, pecaId, ini, fim, ignorarId = null) {
 }
 
 // Data apertada: não cruza com outro aluguel, mas sobra pouca folga
-// (até FOLGA_APERTADA dias livres) entre a higienização de um e a retirada do outro.
+// (até prazos.folga dias livres) entre a higienização de um e a retirada do outro.
 export const FOLGA_APERTADA = 2;
-export function apertados(alugueis, pecaId, ini, fim, ignorarId = null, folga = FOLGA_APERTADA) {
+export function apertados(alugueis, pecaId, ini, fim, ignorarId = null, folga = prazos.folga) {
   return alugueis.flatMap((a) => {
     if (a.pecaId !== pecaId || a.id === ignorarId || a.status === 'cancelado') return [];
     const p = periodo(a);
@@ -388,14 +402,27 @@ export function linkWhats(tel, texto) {
 
 const primeiroNome = (nome) => String(nome || '').trim().split(/\s+/)[0] || '';
 
-export function mensagemProva(cliente, data, hora) {
-  const dia = `${diaSemanaLongo(data)}, ${diaMes(data)}`;
-  return `Oi, ${primeiroNome(cliente)}! Confirmando sua prova ${dia}${hora ? ` às ${hora.replace(':00', 'h').replace(':', 'h')}` : ''}. Até lá!`;
+// Mensagens prontas. Ela pode mudar o texto em Ajustes; as palavras entre chaves
+// são trocadas pelos dados: {nome} (primeiro nome da cliente), {quando} (dia e hora), {peca}.
+export const MENSAGENS_PADRAO = {
+  prova: 'Oi, {nome}! Confirmando sua prova {quando}. Até lá!',
+  pronta: 'Oi, {nome}! Sua encomenda ({peca}) está pronta. Quando fica bom para buscar?',
+  final: 'Qualquer dúvida, é só me chamar.',
+};
+export const preencher = (modelo, dados) => String(modelo).replace(/\{(\w+)\}/g, (todo, k) => (k in dados ? dados[k] : todo));
+const modelo = (m, k) => (m?.[k]?.trim() ? m[k] : MENSAGENS_PADRAO[k]);
+
+export function mensagemProva(cliente, data, hora, mensagens) {
+  const quando = `${diaSemanaLongo(data)}, ${diaMes(data)}${hora ? ` às ${hora.replace(':00', 'h').replace(':', 'h')}` : ''}`;
+  return preencher(modelo(mensagens, 'prova'), { nome: primeiroNome(cliente), quando });
 }
 
-export function mensagemPronta(cliente, peca) {
-  return `Oi, ${primeiroNome(cliente)}! Sua encomenda${peca ? ` (${peca.toLowerCase()})` : ''} está pronta. Quando fica bom para buscar?`;
+export function mensagemPronta(cliente, peca, mensagens) {
+  return preencher(modelo(mensagens, 'pronta'), { nome: primeiroNome(cliente), peca: String(peca || 'peça').toLowerCase() })
+    .replace(' ()', '');
 }
+
+export const fraseFinal = (mensagens) => modelo(mensagens, 'final');
 
 const SEMANA_LONGA = ['no domingo', 'na segunda', 'na terça', 'na quarta', 'na quinta', 'na sexta', 'no sábado'];
 function diaSemanaLongo(iso) {
