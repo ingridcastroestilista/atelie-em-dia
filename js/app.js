@@ -1,12 +1,13 @@
 import * as store from './store.js';
 import { conteudoFicha, imagemFicha } from './ficha.js';
+import { guardarFoto, enderecoFoto, apagarFoto, limparSoltas } from './fotos.js';
 import { tipoLembrete, conteudoLembrete, textoLembrete, imagemLembrete, ORIENTACOES_PADRAO } from './lembrete.js';
 import { uid, agora, tocar, MEDIDAS, GRUPOS_MEDIDAS, acharCliente, clientePorNome, novaCliente } from './store.js';
 import {
   hojeISO, somaDias, diasEntre, dataBR, diaMes, quando, etapasEncomenda, etapasAluguel, infoEtapa, adicionarEtapa, removerEtapa,
   moverEtapa, modeloDe, VERSAO_ETAPAS, etapa, provaAnterior, marcarEtapa, semana, periodo, conflitos, situacaoPeca, arquivoAgenda, linkGoogleAgenda,
   linkWhats, mensagemProva, mensagemPronta, RETIRADA_ANTES, DEVOLUCAO_DEPOIS, apertados, DIAS_HIGIENIZACAO, GRUPOS, resumoMeses, somaMeses, lotacao,
-  formatarTelefone,
+  formatarTelefone, fotosUsadas,
 } from './regras.js';
 
 const S = () => store.get();
@@ -85,9 +86,43 @@ const ICONES = {
   agenda: '<rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M16 2.5v4M8 2.5v4M3 10h18"/>',
   conversa: '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4-.9L3 20.5l1.5-4.6A8.4 8.4 0 0 1 3 11.5 8.6 8.6 0 0 1 12 3a8.6 8.6 0 0 1 9 8.5z"/>',
   ok: '<path d="M20 6 9 17l-5-5"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
   ficha: '<path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/>',
 };
 const ico = (nome) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONES[nome]}</svg>`;
+// Fotos: miniaturas + botão de pôr foto. alvo = o registro que guarda a lista (ex.: 'pecas#ID').
+const AVISO_FOTO_CLIENTE = 'Fotografe só com autorização da cliente e, se der, só a peça, sem o rosto. As fotos ficam só neste celular.';
+function galeria(alvo, ids = [], { soVer = false, aviso = '' } = {}) {
+  if (soVer && !ids.length) return '';
+  return `<div class="galeria">
+    ${ids.map((id) => `<button class="foto-mini" data-acao="verFoto" data-alvo="${esc(alvo)}" data-id="${id}" aria-label="Ver foto"><img data-foto="${id}" alt=""></button>`).join('')}
+    ${soVer ? '' : `<label class="foto-add">${ico('camera')}<span>${ids.length ? 'Mais' : 'Pôr foto'}</span><input type="file" accept="image/*" multiple hidden data-acao="addFoto" data-alvo="${esc(alvo)}"></label>`}
+  </div>${aviso && !soVer ? `<p class="aviso-foto">${aviso}</p>` : ''}`;
+}
+
+// Depois de desenhar a tela, carrega as fotos guardadas no celular.
+function mostrarFotos(raiz = document) {
+  raiz.querySelectorAll('img[data-foto]:not([src])').forEach((img) => {
+    enderecoFoto(img.dataset.foto).then((u) => { if (u) img.src = u; else img.closest('.foto-mini, .mini-lista')?.classList.add('sem-foto'); }).catch(() => {});
+  });
+}
+
+// Visualizar uma foto em tela cheia, com a opção de apagar.
+function folhaFoto() {
+  const { id } = ui.foto;
+  return `<div class="foto-cheia" role="dialog" aria-label="Foto">
+    <img data-foto="${id}" alt="">
+    <div class="foto-cheia-acoes"><button class="btn sec" data-acao="apagarFoto">Apagar foto</button><button class="btn" data-acao="fecharFoto">Fechar</button></div>
+  </div>`;
+}
+
+let limpezaFotos = null;
+// Apaga do celular as fotos de vestidos, provas ou encomendas que foram apagados.
+function limparFotosDepois() {
+  clearTimeout(limpezaFotos);
+  limpezaFotos = setTimeout(() => { store.gravar(); limparSoltas(fotosUsadas(S())).catch(() => {}); }, 1500);
+}
+
 const rotulo = (texto, controle, ajuda = '') => `<label class="campo"><span>${texto}</span>${controle}${ajuda ? `<small>${ajuda}</small>` : ''}</label>`;
 
 let desfazer = null;
@@ -114,6 +149,9 @@ function rota() {
 let ultimoRender = 0;
 let redesenhoPendente = false; // data ou hora mudou e a tela ainda não foi atualizada
 
+// Selo discreto no fim de todas as telas.
+const SELO = '<p class="selo">Desenvolvido por <b>Ingrid Castro Academy</b></p>';
+
 function render() {
   ultimoRender = Date.now();
   redesenhoPendente = false;
@@ -122,8 +160,9 @@ function render() {
   if (nome === 'semana' && (!S().inicioFeito || ui.comecar > PASSOS_ATELIE)) nome = 'comecar';
   if (ui.recem && ui.recem.id !== id) ui.recem = null;
   telaAtual = telas[nome];
-  if (nome === 'comecar') { $main.innerHTML = telaAtual.render(); document.body.dataset.tela = nome; telaAtual.depois?.(); return; }
-  $main.innerHTML = telaAtual.render(id, extra) + (ui.notas ? folhaNotas() : '');
+  if (nome === 'comecar') { $main.innerHTML = telaAtual.render() + SELO; document.body.dataset.tela = nome; telaAtual.depois?.(); return; }
+  $main.innerHTML = telaAtual.render(id, extra) + SELO + (ui.notas ? folhaNotas() : '') + (ui.foto ? folhaFoto() : '');
+  mostrarFotos($main);
   document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('ativo', a.dataset.tela === (telaAtual.aba || nome)));
   document.body.dataset.tela = nome;
   telaAtual.depois?.(id, extra);
@@ -286,6 +325,7 @@ function folhaNotas() {
       <h2>O que ficou decidido?</h2>
       ${area(`encomendas#${id}.etapas#${k}.notas`, e.notas, 'id="notas-folha" placeholder="Ex.: subir a barra 2 cm, apertar 1 cm na cintura" rows="4"')}
       <p class="ajuda">Dica: toque no microfone do teclado para ditar.</p>
+      ${galeria(`encomendas#${id}.etapas#${k}`, e.fotos, { aviso: AVISO_FOTO_CLIENTE })}
       <div class="acoes"><button class="btn" data-acao="fecharNotas">Salvar</button><button class="btn sec" data-acao="fecharNotas">Pular</button></div>
       <button class="link" data-acao="desfazerProva">Marquei sem querer: desfazer</button>
     </div>`;
@@ -537,8 +577,10 @@ function linhaEtapa(item, def, raiz) {
         ${e.data ? `<div class="acoes-etapa"><button class="acao-etapa ${naAgenda ? 'ok' : ''}" data-acao="agenda" data-k="${def.k}">${naAgenda ? `${ico('ok')}Na agenda` : `${ico('agenda')}${e.agendaEm ? 'Data mudou: pôr de novo' : 'Pôr na agenda'}`}</button>` : ''}
         ${e.data && !e.feitaEm && tipoLembrete(item, def.k) ? `<a class="acao-etapa ${e.lembreteEm ? 'ok' : ''}" href="#/lembrete/${item.id}/${def.k}">${e.lembreteEm ? `${ico('ok')}Lembrada em ${diaMes(e.lembreteEm)}` : `${ico('conversa')}Lembrar a cliente`}</a>` : ''}${e.data ? '</div>' : ''}
       </div>` : ''}
-    ${def.prova && (e.feitaEm || e.notas) ? `<div class="notas-prova">${rotulo('O que ficou decidido', area(`${b}.notas`, e.notas, 'placeholder="Ex.: subir a barra 2 cm"'))}</div>` : ''}
-    ${anterior && !e.feitaEm ? `<div class="nota-anterior"><b>Da ${infoEtapa(item, anterior).nome}${anterior.feitaEm ? ` (${diaMes(anterior.feitaEm)})` : ''}:</b> ${esc(anterior.notas)}</div>` : ''}
+    ${def.prova && (e.feitaEm || e.notas || e.fotos?.length) ? `<div class="notas-prova">${rotulo('O que ficou decidido', area(`${b}.notas`, e.notas, 'placeholder="Ex.: subir a barra 2 cm"'))}
+      ${galeria(`${raiz}#${item.id}.etapas#${def.k}`, e.fotos, { aviso: AVISO_FOTO_CLIENTE })}</div>` : ''}
+    ${anterior && !e.feitaEm ? `<div class="nota-anterior"><b>Da ${infoEtapa(item, anterior).nome}${anterior.feitaEm ? ` (${diaMes(anterior.feitaEm)})` : ''}:</b> ${esc(anterior.notas || '')}
+      ${galeria(`${raiz}#${item.id}.etapas#${anterior.k}`, anterior.fotos, { soVer: true })}</div>` : ''}
   </div>`;
 }
 
@@ -619,6 +661,7 @@ telas.encomenda = {
         <p class="ajuda">Toque numa etapa para marcar como feita. Para mudar a lista, toque em <b>Personalizar</b>. Etapa com data aparece na aba <b>Semana</b>.</p>
         ${e.etapas.map((x) => linhaEtapa(e, infoEtapa(e, x), 'encomendas')).join('')}`)}
       ${cartao(`${rotulo('Observações gerais', area(`${b}.obs`, e.obs, 'placeholder="O que vale para a encomenda toda"'))}`)}
+      ${cartao(`<h2>Fotos de referência</h2><p class="ajuda">O modelo que a cliente trouxe, o croqui, o tecido.</p>${galeria(b, e.fotos)}`)}
       ${cartaoWhats(e, c)}
       ${cartao(`<h2>Dados da encomenda</h2>
         ${rotulo('Peça', campo(`${b}.peca`, e.peca))}
@@ -743,7 +786,7 @@ telas.cliente = {
         </div>` : '<p class="ajuda">Nenhuma encomenda ou aluguel ainda.</p>'}
       `)}
       <div class="acoes"><button class="btn perigo" data-acao="apagarCliente">Apagar cliente</button></div>
-      <p class="ajuda">Apagar a cliente apaga também as medidas, as encomendas e os aluguéis dela.</p>
+      <p class="ajuda">Apagar a cliente apaga também as medidas, as encomendas, os aluguéis e as fotos dela.</p>
     `;
   },
 };
@@ -820,7 +863,7 @@ telas.aluguel = {
         ${s.pecas.length ? `<div class="lista">${s.pecas.map((p) => {
           const sit = situacaoPeca(s.alugueis, p.id);
           const detalhe = sit.k === 'cliente' ? `devolve ${diaMes(sit.ate)}` : sit.proxima ? `próxima reserva ${diaMes(sit.proxima)}` : '';
-          return `<a class="linha-lista" href="#/peca/${p.id}"><div><b>${esc(p.nome)}</b><span>${[p.tamanho && `Tam. ${esc(p.tamanho)}`, p.cor && esc(p.cor)].filter(Boolean).join(' · ') || '&nbsp;'}</span></div>
+          return `<a class="linha-lista com-foto" href="#/peca/${p.id}">${p.fotos?.length ? `<span class="mini-lista"><img data-foto="${p.fotos[0]}" alt=""></span>` : `<span class="mini-lista vazia">${ico('camera')}</span>`}<div><b>${esc(p.nome)}</b><span>${[p.tamanho && `Tam. ${esc(p.tamanho)}`, p.cor && esc(p.cor)].filter(Boolean).join(' · ') || '&nbsp;'}</span></div>
             <div class="dir"><span class="pill ${PILL_SIT[sit.k]}">${sit.texto}</span>${detalhe ? `<span>${detalhe}</span>` : ''}</div></a>`;
         }).join('')}</div>` : '<p class="vazio">Cadastre os vestidos do seu acervo para controlar as datas de cada um.</p>'}
         ${cartao(`<div class="novo-item">${campo('ui.novaPeca', ui.novaPeca, 'text', 'placeholder="Nome da peça, ex.: vestido nude bordado" id="nova-peca"')}<button class="btn" data-acao="addPeca">Cadastrar</button></div>`)}
@@ -864,6 +907,7 @@ telas.peca = {
     const sit = situacaoPeca(s.alugueis, p.id);
     return `
       ${cab(esc(p.nome), `<span class="pill ${PILL_SIT[sit.k]}">${sit.texto}</span>`, '#/aluguel')}
+      ${cartao(`<h2>Fotos</h2>${galeria(b, p.fotos)}`)}
       ${cartao(calendario(ui.mesPeca, dela))}
       ${cartao(`<h2>Aluguéis desta peça</h2>
         ${dela.length ? `<div class="lista">${dela.map((a) => { const pr = periodo(a); return `<a class="linha-lista" href="#/locacao/${a.id}"><div><b>${esc(nomeCliente(a.clienteId))}</b><span>${diaMes(pr.ini)} a ${diaMes(pr.devolucao)} · evento ${diaMes(a.evento)}</span></div>
@@ -1087,13 +1131,16 @@ telas.ajustes = {
           : '<p class="ajuda">Para criar um modelo, abra uma encomenda, toque em <b>Personalizar</b> nas etapas e depois em <b>Salvar modelo</b>.</p>'}
         ${s.modelos.length ? '<p class="ajuda">Os modelos aparecem para escolher quando você registra uma encomenda nova.</p>' : ''}`)}
       ${cartao(`<h2>Backup</h2>
-        <p>Tudo o que você registra fica só neste celular. Faça um backup de tempos em tempos e guarde o arquivo no Drive, no iCloud ou mande para você mesma no WhatsApp.</p>
+        <p>Tudo o que você registra fica só neste celular, inclusive as fotos. Faça um backup de tempos em tempos e guarde o arquivo no Drive, no iCloud ou mande para você mesma no WhatsApp. As fotos vão dentro do backup.</p>
         <p class="ajuda">${s.ultimoBackup ? `Último backup: ${dataBR(hojeISO(new Date(s.ultimoBackup)))}` : 'Nenhum backup feito ainda.'} O arquivo tem os dados das suas clientes: guarde com cuidado.</p>
+        ${ui.backupPronto ? `<p class="alerta ok">Backup pronto${ui.backupPronto.fotos ? `, com ${ui.backupPronto.fotos} foto${ui.backupPronto.fotos > 1 ? 's' : ''}` : ''}. Toque para salvar ou mandar.</p>
+          <button class="btn grande" data-acao="enviarBackupPronto">Salvar ou mandar o backup</button>` : ''}
         <div class="acoes"><button class="btn" data-acao="exportar">Fazer backup</button>
           <label class="btn sec">Restaurar um backup<input type="file" accept="application/json,.json" data-acao="importar" hidden></label></div>`)}
       ${cartao(`<h2>Privacidade</h2>
         <p>Os dados ficam guardados só neste aparelho. Ninguém mais tem acesso a eles, nem a Ingrid.</p>
-        <p>As medidas e os contatos das suas clientes são dados pessoais. Você é responsável por eles: anote só o necessário e apague a ficha de quem pedir.</p>`)}
+        <p>As medidas e os contatos das suas clientes são dados pessoais. Você é responsável por eles: anote só o necessário e apague a ficha de quem pedir.</p>
+        <p>Fotos de prova também são dados pessoais. Fotografe só com a autorização da cliente, prefira fotografar só a peça, sem o rosto, e apague as fotos quando ela pedir. Ao apagar uma cliente, as fotos dela são apagadas junto.</p>`)}
       ${cartao(`<h2>Guardar na tela do celular</h2>
         <p><b>iPhone:</b> no Safari, toque em Compartilhar e depois em Adicionar à Tela de Início.</p>
         <p><b>Android:</b> no Chrome, toque no menu (⋮) e depois em Instalar app.</p>`)}
@@ -1114,7 +1161,7 @@ function porNaAgenda(item, k) {
     id: `${item.id}-${k}`,
     titulo: `${def.rotulo} · ${c?.nome || ''} · ${nomePeca(item)}`,
     data: e.data, hora: e.hora,
-    descricao: [c?.whatsapp && `WhatsApp: ${c.whatsapp}`, anterior && `Da ${infoEtapa(item, anterior).nome}: ${anterior.notas}`].filter(Boolean).join('\n'),
+    descricao: [c?.whatsapp && `WhatsApp: ${c.whatsapp}`, anterior?.notas?.trim() && `Da ${infoEtapa(item, anterior).nome}: ${anterior.notas}`].filter(Boolean).join('\n'),
   };
   if (ehAndroid()) {
     window.open(linkGoogleAgenda(ev), '_blank', 'noopener');
@@ -1165,7 +1212,28 @@ function concluirEtapa(item, k) {
 const acoes = {
   instalar() { promptInstalar?.prompt(); promptInstalar = null; },
   fecharInstalar() { S().avisoInstalarVisto = true; store.salvar(); render(); },
-  exportar() { store.exportar().then(() => { toast('Backup criado'); render(); }); },
+  async exportar() {
+    toast('Preparando o backup…');
+    let b;
+    try { b = await store.prepararBackup(); } catch { return toast('Não foi possível preparar o backup.'); }
+    const mb = b.blob.size / 1048576;
+    try {
+      await store.enviarBackup(b);
+      ui.backupPronto = null;
+      toast(`Backup criado${mb >= 1 ? ` (${mb.toFixed(0)} MB)` : ''}`);
+    } catch {
+      // O celular pediu um novo toque (as fotos demoraram para entrar no arquivo).
+      ui.backupPronto = b;
+      if (rota().nome !== 'ajustes') return ir('#/ajustes');
+    }
+    render();
+  },
+  async enviarBackupPronto() {
+    const b = ui.backupPronto;
+    if (!b) return;
+    try { await store.enviarBackup(b); ui.backupPronto = null; toast('Backup criado'); } catch { toast('Não foi possível compartilhar. Tente de novo.'); }
+    render();
+  },
   desfazer() { const f = desfazer; desfazer = null; document.getElementById('toast').classList.remove('on'); f?.(); },
   concluir(el) {
     const lista = el.dataset.tipo === 'aluguel' ? S().alugueis : S().encomendas;
@@ -1314,7 +1382,7 @@ const acoes = {
     const item = itemDaRota();
     const e = etapa(item, el.dataset.k);
     if ((e.feitaEm || e.notas?.trim() || e.data) && !confirm(`Tirar "${infoEtapa(item, e).nome}"? A data e as anotações dela também saem.`)) return;
-    removerEtapa(item, el.dataset.k); tocar(item); store.salvar(); render();
+    removerEtapa(item, el.dataset.k); tocar(item); store.salvar(); limparFotosDepois(); render();
   },
   addEtapa() {
     const nome = ui.novaEtapa.trim();
@@ -1364,7 +1432,7 @@ const acoes = {
     if (!confirm('Apagar esta peça? O histórico de aluguéis dela também some.')) return;
     S().pecas = S().pecas.filter((p) => p.id !== id);
     S().alugueis = S().alugueis.filter((a) => a.pecaId !== id);
-    store.salvar(); ir('#/aluguel');
+    store.salvar(); limparFotosDepois(); ir('#/aluguel');
   },
   cancelar() { const item = itemDaRota(); item.status = item.tipo === 'aluguel' ? 'cancelado' : 'cancelada'; tocar(item); store.salvar(); render(); },
   reabrir() { const item = itemDaRota(); item.status = 'andamento'; tocar(item); store.salvar(); render(); },
@@ -1373,12 +1441,27 @@ const acoes = {
     if (!confirm(`Apagar ${item.tipo === 'aluguel' ? 'este aluguel' : 'esta encomenda'}? Isso não pode ser desfeito.`)) return;
     if (item.tipo === 'aluguel') S().alugueis = S().alugueis.filter((a) => a.id !== item.id);
     else S().encomendas = S().encomendas.filter((e) => e.id !== item.id);
-    store.salvar(); ir(item.tipo === 'aluguel' ? '#/aluguel' : '#/encomendas');
+    store.salvar(); limparFotosDepois(); ir(item.tipo === 'aluguel' ? '#/aluguel' : '#/encomendas');
   },
   apagarCliente() {
     const c = acharCliente(rota().id);
-    if (!confirm(`Apagar ${c.nome}? As medidas, as encomendas e os aluguéis dela também serão apagados. Isso não pode ser desfeito.`)) return;
-    store.apagarCliente(c.id); store.salvar(); toast('Cliente apagada'); ir('#/clientes');
+    if (!confirm(`Apagar ${c.nome}? As medidas, as encomendas, os aluguéis e as fotos dela também serão apagados. Isso não pode ser desfeito.`)) return;
+    store.apagarCliente(c.id); store.salvar(); limparFotosDepois(); toast('Cliente apagada'); ir('#/clientes');
+  },
+  verFoto(el) { ui.foto = { alvo: el.dataset.alvo, id: el.dataset.id }; const y = window.scrollY; render(); window.scrollTo(0, y); },
+  fecharFoto() { ui.foto = null; const y = window.scrollY; render(); window.scrollTo(0, y); },
+  async apagarFoto() {
+    if (!confirm('Apagar esta foto? Ela sai deste celular.')) return;
+    const { alvo, id } = ui.foto;
+    const r = resolver(`${alvo}.fotos`);
+    if (r?.alvo.fotos) r.alvo.fotos = r.alvo.fotos.filter((x) => x !== id);
+    const [raiz, rid] = alvo.split('.')[0].split('#');
+    const dono = S()[raiz]?.find((x) => x.id === rid);
+    if (dono) tocar(dono);
+    store.salvar();
+    ui.foto = null;
+    await apagarFoto(id).catch(() => {});
+    toast('Foto apagada'); const y = window.scrollY; render(); window.scrollTo(0, y);
   },
   alternarMedida(el) {
     const nome = el.dataset.nome;
@@ -1454,6 +1537,33 @@ document.addEventListener('change', (ev) => {
   if (el.dataset?.bind && ['date', 'time'].includes(el.type)) { setPath(el.dataset.bind, el.value); redesenhoPendente = true; return; }
   if (el.dataset?.bind && el.type === 'tel') { el.value = formatarTelefone(el.value); setPath(el.dataset.bind, el.value); return; }
   if (el.dataset?.bind === 'capacidadeMes') { setPath('capacidadeMes', Math.max(0, Math.round(Number(el.value) || 0))); render(); return; }
+  if (el.dataset?.acao === 'addFoto' && el.files.length) {
+    const alvo = el.dataset.alvo;
+    const arquivos = [...el.files];
+    el.value = '';
+    toast(arquivos.length > 1 ? 'Guardando as fotos…' : 'Guardando a foto…');
+    (async () => {
+      let ok = 0;
+      for (const f of arquivos) {
+        try {
+          const id = await guardarFoto(f);
+          const r = resolver(`${alvo}.fotos`);
+          if (!r) { await apagarFoto(id); continue; }
+          r.alvo.fotos = [...(r.alvo.fotos || []), id];
+          ok++;
+        } catch { /* foto que não abriu: segue para a próxima */ }
+      }
+      const [raiz, rid] = alvo.split('.')[0].split('#');
+      const dono = S()[raiz]?.find((x) => x.id === rid);
+      if (dono) tocar(dono);
+      store.salvar();
+      if (!ok) return toast('Não foi possível guardar a foto.');
+      toast(ok > 1 ? `${ok} fotos guardadas` : 'Foto guardada');
+      // Na folha de anotações da prova, só atualiza as miniaturas (sem fechar a folha).
+      const y = window.scrollY; render(); window.scrollTo(0, y);
+    })();
+    return;
+  }
   if (el.dataset?.acao === 'importar' && el.files[0]) {
     if (!confirm('Restaurar este backup? Os dados atuais deste aparelho serão substituídos.')) { el.value = ''; return; }
     store.importar(el.files[0]).then(() => { toast('Backup restaurado'); ir('#/semana'); }).catch((e) => toast(e.message || 'Não foi possível ler o arquivo.'));
@@ -1485,7 +1595,7 @@ document.addEventListener('keydown', (ev) => {
 });
 
 window.addEventListener('hashchange', () => {
-  ui.notas = null; ui.editEtapas = null;
+  ui.notas = null; ui.editEtapas = null; ui.foto = null;
   if (rota().nome !== 'semana') ui.comecar = 0; // saiu do primeiro acesso
   render(); window.scrollTo(0, 0);
 });

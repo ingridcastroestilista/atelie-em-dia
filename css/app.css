@@ -378,3 +378,33 @@ button.voltar { background: none; border: 0; cursor: pointer; font-family: inher
   .previa-ficha, .previa-ficha * { visibility: visible !important; }
   .previa-ficha { position: fixed; inset: 0; width: 100%; height: auto; max-width: none; border: 0; box-shadow: none; border-radius: 0; margin: 0; }
 }
+
+/* Fotos */
+.galeria { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+.foto-mini, .foto-add { width: 76px; height: 76px; border-radius: 12px; flex: none; }
+.foto-mini { padding: 0; border: 0; overflow: hidden; background: var(--cinza); cursor: pointer; }
+.foto-mini img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foto-mini.sem-foto { display: none; }
+.foto-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1.5px dashed var(--marsala); color: var(--marsala); font: 600 13px var(--sans); cursor: pointer; background: #fff; }
+.foto-add .ico { width: 24px; height: 24px; }
+.aviso-foto { font-size: 13px; color: var(--ink-2); margin: 4px 0 0; line-height: 1.4; }
+.nota-anterior .galeria { margin-bottom: 0; }
+.nota-anterior .foto-mini { width: 60px; height: 60px; }
+.folha .galeria { margin-top: 4px; }
+.foto-cheia { position: fixed; inset: 0; z-index: 60; background: rgba(20, 16, 15, .94); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px); }
+.foto-cheia img { max-width: 100%; max-height: calc(100% - 90px); object-fit: contain; border-radius: 8px; }
+.foto-cheia-acoes { display: flex; gap: 10px; }
+.foto-cheia-acoes .btn.sec { background: transparent; color: #fff; border-color: rgba(255,255,255,.6); }
+.linha-lista.com-foto { gap: 12px; }
+.mini-lista { flex: none; width: 52px; height: 52px; border-radius: 10px; overflow: hidden; background: var(--cinza); display: grid; place-items: center; color: var(--ink-3); }
+.mini-lista img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mini-lista .ico { width: 22px; height: 22px; }
+.linha-lista.com-foto > div:not(.dir) { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.linha-lista.com-foto { gap: 10px; padding-left: 12px; }
+.linha-lista.com-foto .mini-lista { width: 44px; height: 44px; }
+.linha-lista.com-foto .dir { flex: none; max-width: 42%; }
+.linha-lista.com-foto .dir span { font-size: 13px; }
+
+/* Selo de quem desenvolveu */
+.selo { margin: 36px 0 8px; text-align: center; font: 400 12px var(--sans); letter-spacing: .02em; color: var(--ink-3); }
+.selo b { font-weight: 600; color: var(--marsala); }

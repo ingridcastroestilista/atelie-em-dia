@@ -1,8 +1,8 @@
 // Guarda o app no celular para abrir sem internet.
 // Ao publicar uma versão nova, mude VERSAO para o celular baixar os arquivos novos.
-const VERSAO = 'ad-v13';
+const VERSAO = 'ad-v14';
 const ARQUIVOS = [
-  './', 'index.html', 'css/app.css', 'js/app.js', 'js/regras.js', 'js/store.js', 'js/lembrete.js', 'js/ficha.js',
+  './', 'index.html', 'css/app.css', 'js/app.js', 'js/regras.js', 'js/store.js', 'js/lembrete.js', 'js/ficha.js', 'js/fotos.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 
@@ -40,8 +40,11 @@ self.addEventListener('fetch', (e) => {
     }));
     return;
   }
+  // Sempre confere com o site se o arquivo mudou (sem usar a cópia antiga do navegador):
+  // assim uma versão nova chega inteira, sem misturar arquivo novo com arquivo velho.
+  const atual = req.mode === 'navigate' ? req : new Request(req, { cache: 'no-cache' });
   e.respondWith(
-    fetch(req).then((res) => {
+    fetch(atual).then((res) => {
       const copia = res.clone();
       caches.open(VERSAO).then((c) => c.put(req, copia));
       return res;

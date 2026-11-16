@@ -1,5 +1,6 @@
 // Dados guardados só no celular (localStorage), backup em arquivo.
-import { hojeISO, migrarEtapas } from './regras.js';
+import { hojeISO, migrarEtapas, fotosUsadas } from './regras.js';
+import { fotosParaBackup, restaurarFotos, apagarTodas } from './fotos.js';
 import { ORIENTACOES_PADRAO } from './lembrete.js';
 
 const CHAVE = 'atelie-em-dia:v1';
@@ -146,17 +147,30 @@ export function apagarCliente(id) {
 
 // ---------- Backup ----------
 
-export function exportar() {
+// Monta o arquivo de backup, com as fotos dentro. Pode levar alguns segundos se houver muitas fotos.
+export async function prepararBackup() {
+  const fotos = await fotosParaBackup(fotosUsadas(state));
   state.ultimoBackup = agora();
   gravar();
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ ...state, fotos })], { type: 'application/json' });
   const nome = `atelie-em-dia-backup-${hojeISO()}.json`;
-  const arquivo = new File([blob], nome, { type: 'application/json' });
-  if (navigator.canShare?.({ files: [arquivo] })) {
-    return navigator.share({ files: [arquivo], title: 'Backup Ateliê em Dia' }).catch(() => baixar(blob, nome));
+  return { blob, nome, arquivo: new File([blob], nome, { type: 'application/json' }), fotos: fotos.length };
+}
+
+// Manda o backup pelo menu de compartilhar (ou baixa o arquivo).
+// Se o celular recusar porque passou tempo demais desde o toque, avisa com NotAllowedError
+// para o app mostrar um botão e ela tocar de novo.
+export async function enviarBackup(b) {
+  if (navigator.canShare?.({ files: [b.arquivo] })) {
+    try {
+      await navigator.share({ files: [b.arquivo], title: 'Backup Ateliê em Dia' });
+    } catch (e) {
+      if (e.name === 'NotAllowedError') throw e;
+      if (e.name !== 'AbortError') baixar(b.blob, b.nome);
+    }
+    return;
   }
-  baixar(blob, nome);
-  return Promise.resolve();
+  baixar(b.blob, b.nome);
 }
 
 export function baixar(blob, nome) {
@@ -173,7 +187,9 @@ export async function importar(arquivo) {
   if (!dados || !Array.isArray(dados.clientes) || !Array.isArray(dados.encomendas)) {
     throw new Error('Esse arquivo não é um backup do Ateliê em Dia.');
   }
-  state = { ...inicial(), ...dados };
+  const { fotos = [], ...resto } = dados;
+  await restaurarFotos(fotos);
+  state = { ...inicial(), ...resto };
   migrar();
   gravar();
 }
@@ -181,4 +197,5 @@ export async function importar(arquivo) {
 export function apagarTudo() {
   state = inicial();
   gravar();
+  apagarTodas().catch(() => {});
 }

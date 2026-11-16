@@ -170,7 +170,7 @@ export function provaAnterior(encomenda, k) {
   const provas = encomenda.etapas.filter((e) => infoEtapa(encomenda, e).prova);
   const i = provas.findIndex((e) => e.k === k);
   for (let j = i - 1; j >= 0; j--) {
-    if (provas[j].notas?.trim()) return provas[j];
+    if (provas[j].notas?.trim() || provas[j].fotos?.length) return provas[j];
   }
   return null;
 }
@@ -401,4 +401,18 @@ const SEMANA_LONGA = ['no domingo', 'na segunda', 'na terça', 'na quarta', 'na 
 function diaSemanaLongo(iso) {
   const [a, m, d] = iso.split('-').map(Number);
   return SEMANA_LONGA[new Date(a, m - 1, d).getDay()];
+}
+
+// ---------- Fotos ----------
+
+// Os códigos de todas as fotos em uso: dos vestidos, das encomendas (referência) e das etapas (provas).
+export function fotosUsadas(s) {
+  const ids = new Set();
+  const add = (lista) => (lista || []).forEach((id) => ids.add(id));
+  (s.pecas || []).forEach((p) => add(p.fotos));
+  for (const item of [...(s.encomendas || []), ...(s.alugueis || [])]) {
+    add(item.fotos);
+    (item.etapas || []).forEach((e) => add(e.fotos));
+  }
+  return ids;
 }
