@@ -350,3 +350,31 @@ button.voltar { background: none; border: 0; cursor: pointer; font-family: inher
   background: #fff; color: var(--marsala); font: 600 15px var(--sans); text-decoration: none; cursor: pointer; }
 .acao-etapa:active { background: var(--marsala-claro); }
 .acao-etapa.ok { border-color: transparent; background: #E8F1EA; color: var(--ok); }
+
+/* Medidas por grupo, com a numeração do guia */
+.grupo-med { font: 600 13px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--marsala); margin: 18px 0 8px; }
+.medida span i, .escolha-txt i { font-style: normal; font-weight: 600; color: var(--ink-3); margin-right: 6px; font-variant-numeric: tabular-nums; }
+.escolher-med { display: inline-block; font-size: 15px; }
+.escolha-med { display: flex; align-items: flex-start; gap: 12px; width: 100%; background: none; border: 0; border-top: 1px solid var(--line); padding: 10px 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.escolha-med:first-of-type { border-top: 0; }
+.escolha-med .bola { margin-top: 2px; }
+.escolha-med.on .bola { background: var(--marsala); }
+.escolha-med:not(.on) .escolha-txt { opacity: .5; }
+.escolha-txt { display: flex; flex-direction: column; gap: 2px; }
+.escolha-txt b { font-weight: 500; font-size: 17px; }
+.escolha-txt small { font-size: 14px; color: var(--ink-2); line-height: 1.35; }
+.grade-medidas { grid-template-columns: 1fr; gap: 0; }
+.grade-medidas .medida { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 16px; color: var(--ink); }
+.grade-medidas .medida:last-child { border-bottom: 0; }
+.grade-medidas .medida span { flex: 1; min-width: 0; }
+.grade-medidas .medida input { flex: none; width: 92px; padding: 8px 10px; }
+
+/* Ficha de medidas */
+.ficha-btn { margin-top: 12px; }
+.previa-ficha { aspect-ratio: 1240 / 1754; background: #fff; }
+@media print {
+  @page { size: A4; margin: 0; }
+  body * { visibility: hidden !important; }
+  .previa-ficha, .previa-ficha * { visibility: visible !important; }
+  .previa-ficha { position: fixed; inset: 0; width: 100%; height: auto; max-width: none; border: 0; box-shadow: none; border-radius: 0; margin: 0; }
+}

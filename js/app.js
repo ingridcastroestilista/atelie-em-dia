@@ -1,6 +1,7 @@
 import * as store from './store.js';
+import { conteudoFicha, imagemFicha } from './ficha.js';
 import { tipoLembrete, conteudoLembrete, textoLembrete, imagemLembrete, ORIENTACOES_PADRAO } from './lembrete.js';
-import { uid, agora, tocar, MEDIDAS, acharCliente, clientePorNome, novaCliente } from './store.js';
+import { uid, agora, tocar, MEDIDAS, GRUPOS_MEDIDAS, acharCliente, clientePorNome, novaCliente } from './store.js';
 import {
   hojeISO, somaDias, diasEntre, dataBR, diaMes, quando, etapasEncomenda, etapasAluguel, infoEtapa, adicionarEtapa, removerEtapa,
   moverEtapa, modeloDe, VERSAO_ETAPAS, etapa, provaAnterior, marcarEtapa, semana, periodo, conflitos, situacaoPeca, arquivoAgenda, linkGoogleAgenda,
@@ -84,6 +85,7 @@ const ICONES = {
   agenda: '<rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M16 2.5v4M8 2.5v4M3 10h18"/>',
   conversa: '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4-.9L3 20.5l1.5-4.6A8.4 8.4 0 0 1 3 11.5 8.6 8.6 0 0 1 12 3a8.6 8.6 0 0 1 9 8.5z"/>',
   ok: '<path d="M20 6 9 17l-5-5"/>',
+  ficha: '<path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/>',
 };
 const ico = (nome) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONES[nome]}</svg>`;
 const rotulo = (texto, controle, ajuda = '') => `<label class="campo"><span>${texto}</span>${controle}${ajuda ? `<small>${ajuda}</small>` : ''}</label>`;
@@ -669,7 +671,8 @@ function resumoMedidas(medidas) {
   const ultima = medidas[medidas.length - 1];
   const linhas = new Map();
   for (const m of medidas) for (const [k, v] of Object.entries(m.valores)) linhas.set(k, { v, data: m.data, antes: linhas.get(k)?.v });
-  return `<dl class="medidas">${[...linhas].map(([k, x]) => {
+  const ordem = (k) => { const i = MEDIDAS.indexOf(k); return i < 0 ? 999 : i; };
+  return `<dl class="medidas">${[...linhas].sort(([a], [b]) => ordem(a) - ordem(b)).map(([k, x]) => {
     const velha = x.data !== ultima.data;
     const mudou = !velha && x.antes && x.antes !== x.v;
     return `<dt>${esc(k)}</dt><dd>${esc(x.v)}${mudou ? ` <small>(era ${esc(x.antes)})</small>` : ''}${velha ? ` <small class="velha">de ${diaMes(x.data)}</small>` : ''}</dd>`;
@@ -722,6 +725,7 @@ telas.cliente = {
       ${cartao(`
         <div class="cartao-cab"><h2>Medidas</h2><a class="btn peq" href="#/medidas/${c.id}">+ Nova medição</a></div>
         ${ultima ? `<p class="ajuda">Última medição: ${dataBR(ultima.data)}</p>${resumoMedidas(meds)}
+          <a class="acao-etapa ficha-btn" href="#/ficha/${c.id}">${ico('ficha')}Ficha para imprimir</a>
           ${meds.length > 1 ? `<details class="antigas"><summary>Medições anteriores (${meds.length - 1})</summary>
             ${meds.slice(0, -1).reverse().map((m) => `<h3>${dataBR(m.data)}</h3>${tabelaMedidas(m)}`).join('')}</details>` : ''}`
           : '<p class="ajuda">Nenhuma medida ainda. Toque em <b>+ Nova medição</b> quando tirar as medidas dela.</p>'}
@@ -752,17 +756,48 @@ telas.medidas = {
     if (!ui.medicao || ui.medicao.clienteId !== id) ui.medicao = { clienteId: id, data: hojeISO(), valores: {}, extra: '' };
     const m = ui.medicao;
     const ultima = c.medidas[c.medidas.length - 1];
-    const nomes = [...new Set([...MEDIDAS, ...c.medidas.flatMap((x) => Object.keys(x.valores)), ...Object.keys(m.valores)])];
+    const ocultas = new Set(S().medidasOcultas);
+    // Medida escondida ainda aparece se a cliente já tem valor nela (para não sumir com o que foi anotado).
+    const temValor = new Set([...c.medidas.flatMap((x) => Object.keys(x.valores)), ...Object.keys(m.valores)]);
+    const campoMed = (k, num = '') => `<label class="medida"><span>${num ? `<i>${num}</i>` : ''}${esc(k)}</span>
+      <input type="text" inputmode="decimal" data-bind="ui.medicao.valores.${esc(k)}" value="${esc(m.valores[k] || '')}" placeholder="${esc(ultima?.valores[k] || '')}"></label>`;
+    const grupos = GRUPOS_MEDIDAS.map((g) => {
+      const itens = g.medidas.filter((x) => !ocultas.has(x.nome) || temValor.has(x.nome));
+      return itens.length ? `<h3 class="grupo-med">${g.nome}</h3><div class="grade-medidas">${itens.map((x) => campoMed(x.nome, x.num)).join('')}</div>` : '';
+    }).join('');
+    const outras = [...temValor].filter((k) => !MEDIDAS.includes(k));
     return `
       ${cab('Nova medição', esc(c.nome), `#/cliente/${id}`)}
       ${cartao(`
         ${rotulo('Data', campo('ui.medicao.data', m.data, 'date'))}
-        <p class="ajuda">Preencha só as medidas que você usa, em centímetros.${ultima ? ' Em cinza, a medida anterior.' : ''}</p>
-        <div class="grade-medidas">${nomes.map((k) => `<label class="medida"><span>${esc(k)}</span>
-          <input type="text" inputmode="decimal" data-bind="ui.medicao.valores.${esc(k)}" value="${esc(m.valores[k] || '')}" placeholder="${esc(ultima?.valores[k] || '')}"></label>`).join('')}</div>
+        <p class="ajuda">Em centímetros. Preencha só as que precisar.${ultima ? ' Em cinza, a medida anterior.' : ''}</p>
+        <a class="link escolher-med" href="#/escolherMedidas/${id}">Escolher quais medidas aparecem</a>
+        ${grupos}
+        ${outras.length ? `<h3 class="grupo-med">Outras</h3><div class="grade-medidas">${outras.map((k) => campoMed(k)).join('')}</div>` : ''}
         <div class="novo-item">${campo('ui.medicao.extra', m.extra, 'text', 'placeholder="Outra medida, ex.: Altura do joelho"')}<button class="btn sec" data-acao="medidaExtra">Acrescentar</button></div>
       `)}
       <button class="btn grande" data-acao="salvarMedicao">Salvar medidas</button>
+    `;
+  },
+};
+
+// Escolher as medidas que aparecem na medição (as do guia; ela desmarca as que não usa).
+telas.escolherMedidas = {
+  aba: 'clientes',
+  render(id) {
+    const ocultas = new Set(S().medidasOcultas);
+    const voltar = id ? `#/medidas/${id}` : '#/ajustes';
+    const usadas = MEDIDAS.length - MEDIDAS.filter((k) => ocultas.has(k)).length;
+    return `
+      ${cab('Suas medidas', `${usadas} de ${MEDIDAS.length} aparecem na medição`, voltar)}
+      <p class="dica">Toque para tirar as que você não usa. Dá para trazer de volta quando quiser.</p>
+      ${GRUPOS_MEDIDAS.map((g) => cartao(`<h2>${g.nome}</h2>${g.medidas.map((x) => {
+        const usa = !ocultas.has(x.nome);
+        return `<button class="escolha-med ${usa ? 'on' : ''}" data-acao="alternarMedida" data-nome="${esc(x.nome)}" aria-pressed="${usa}">
+          <span class="bola">${usa ? '✓' : ''}</span><span class="escolha-txt"><b><i>${x.num}</i>${esc(x.nome)}</b><small>${esc(x.dica)}</small></span></button>`;
+      }).join('')}`)).join('')}
+      <div class="acoes">${ocultas.size ? '<button class="btn sec" data-acao="mostrarTodasMedidas">Mostrar todas</button>' : ''}
+        <a class="btn" href="${voltar}">Pronto</a></div>
     `;
   },
 };
@@ -919,6 +954,39 @@ telas.lembrete = {
   },
 };
 
+// Ficha de medidas da cliente em imagem, para imprimir ou guardar.
+function dadosFicha(id) {
+  const cliente = acharCliente(id);
+  if (!cliente) return null;
+  const encs = S().encomendas.filter((e) => e.clienteId === id && e.status === 'andamento').sort((a, b) => a.evento.localeCompare(b.evento));
+  return { cliente, conteudo: conteudoFicha({ cliente, atelie: S().atelie, encomenda: encs[0] }) };
+}
+
+telas.ficha = {
+  aba: 'clientes',
+  render(id) {
+    const d = dadosFicha(id);
+    if (!d) return `${cab('Ficha de medidas', '', '#/clientes')}<p class="vazio">Essa cliente não existe mais.</p>`;
+    if (!d.conteudo.grupos.length) return `${cab('Ficha de medidas', esc(d.cliente.nome), `#/cliente/${id}`)}<p class="vazio">Ainda não há medidas dela. <a href="#/medidas/${id}">Tirar as medidas</a></p>`;
+    return `
+      ${cab('Ficha de medidas', esc(d.cliente.nome), `#/cliente/${id}`)}
+      <img id="previa-ficha" class="previa-img previa-ficha" alt="Ficha de medidas de ${esc(d.cliente.nome)}">
+      <div class="acoes coluna">
+        <button class="btn grande" data-acao="mandarFicha">Salvar ou mandar a imagem</button>
+        <button class="btn sec" data-acao="imprimirFicha">Imprimir</button>
+      </div>
+      <p class="ajuda">Vão as medidas mais recentes dela, na ordem do guia, e as observações da ficha.${S().atelie.nome ? '' : ' O nome do ateliê vem de <a href="#/ajustes">Ajustes</a>.'}</p>`;
+  },
+  async depois(id) {
+    const d = dadosFicha(id);
+    if (!d?.conteudo.grupos.length) return;
+    const blob = await imagemFicha(d.conteudo);
+    imagemAtual = { blob, nome: `medidas-${(d.cliente.nome || 'cliente').split(' ')[0].toLowerCase()}.png` };
+    const img = document.getElementById('previa-ficha');
+    if (img) img.src = URL.createObjectURL(blob);
+  },
+};
+
 function editorOrientacoes() {
   const o = S().atelie.orientacoes;
   return [['provas', 'Provas e medidas'], ['aluguel', 'Aluguel (retirada e devolução)']].map(([g, t]) => `
@@ -1010,6 +1078,9 @@ telas.ajustes = {
       ${cartao(`<h2>Orientações para a cliente</h2>
         <p class="ajuda">Vão no lembrete antes de cada compromisso. Mude o texto, tire ou acrescente.</p>
         ${editorOrientacoes()}`)}
+      ${cartao(`<h2>Medidas</h2>
+        <p class="ajuda">As 38 medidas do guia aparecem na medição. Tire as que você não usa.</p>
+        <a class="btn sec" href="#/escolherMedidas">Escolher medidas (${MEDIDAS.length - S().medidasOcultas.filter((k) => MEDIDAS.includes(k)).length} de ${MEDIDAS.length})</a>`)}
       ${cartao(`<h2>Modelos de etapas</h2>
         ${s.modelos.length ? `<div class="lista">${s.modelos.map((m) => `<div class="linha-lista"><div><b>${esc(m.nome)}</b><span>${m.etapas.length} etapas</span></div>
           <button class="btn perigo peq" data-acao="apagarModelo" data-id="${m.id}">Apagar</button></div>`).join('')}</div>`
@@ -1170,6 +1241,20 @@ const acoes = {
     }
     acoes.marcarLembrete();
   },
+  async mandarFicha() {
+    if (!imagemAtual) return;
+    const arq = new File([imagemAtual.blob], imagemAtual.nome, { type: 'image/png' });
+    if (navigator.canShare?.({ files: [arq] })) {
+      try { await navigator.share({ files: [arq] }); } catch (e) { if (e.name !== 'AbortError') toast('Não foi possível compartilhar.'); }
+    } else {
+      store.baixar(imagemAtual.blob, imagemAtual.nome);
+      toast('Imagem baixada');
+    }
+  },
+  imprimirFicha() {
+    if (!document.getElementById('previa-ficha')?.src) return;
+    window.print(); // a folha de impressão mostra só a ficha (veja @media print no CSS)
+  },
   async copiarLembrete() {
     if (!imagemAtual) return;
     try { await navigator.clipboard.writeText(imagemAtual.texto); toast('Texto copiado. É só colar no WhatsApp.'); acoes.marcarLembrete(); }
@@ -1295,6 +1380,15 @@ const acoes = {
     if (!confirm(`Apagar ${c.nome}? As medidas, as encomendas e os aluguéis dela também serão apagados. Isso não pode ser desfeito.`)) return;
     store.apagarCliente(c.id); store.salvar(); toast('Cliente apagada'); ir('#/clientes');
   },
+  alternarMedida(el) {
+    const nome = el.dataset.nome;
+    const ocultas = S().medidasOcultas;
+    const i = ocultas.indexOf(nome);
+    if (i >= 0) ocultas.splice(i, 1); else ocultas.push(nome);
+    store.salvar();
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+  },
+  mostrarTodasMedidas() { S().medidasOcultas = []; store.salvar(); render(); },
   medidaExtra() {
     const nome = ui.medicao.extra.trim();
     if (!nome) return;
@@ -1400,6 +1494,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) store
 
 store.carregar();
 // Garante os campos novos do ateliê mesmo se o celular ainda tiver um arquivo antigo guardado.
+if (!Array.isArray(S().medidasOcultas)) S().medidasOcultas = [];
 S().atelie = { nome: '', endereco: '', whatsapp: '', orientacoes: structuredClone(ORIENTACOES_PADRAO), ...S().atelie };
 if (S().inicioFeito === undefined) S().inicioFeito = !!(S().atelie.nome || S().encomendas.length || S().alugueis.length || S().clientes.length);
 store.pedirArmazenamentoPersistente();

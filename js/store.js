@@ -8,18 +8,66 @@ const VERSAO = 1;
 export const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
 export const agora = () => new Date().toISOString();
 
-// Medidas mais usadas; ela preenche só as que usa e pode acrescentar outras.
-export const MEDIDAS = [
-  'Busto', 'Cintura', 'Quadril', 'Altura do busto', 'Separação do busto', 'Ombro a ombro', 'Ombro',
-  'Cava', 'Braço', 'Comprimento da manga', 'Comprimento da frente', 'Comprimento das costas',
-  'Altura do quadril', 'Comprimento da saia', 'Altura total',
+// As 38 medidas do guia "Como tirar medidas" da Ingrid, na mesma ordem e numeração.
+// Cada uma tem uma dica curta de como medir. Ela esconde as que não usa (medidasOcultas).
+export const GRUPOS_MEDIDAS = [
+  { nome: 'Corpo', medidas: [
+    ['Busto', 'Contorno na altura dos mamilos.'],
+    ['Alto busto', 'Contorno na altura das cavas, com a fita por baixo dos braços.'],
+    ['Cintura', 'Contorno na linha da cintura (geralmente 2 a 3 cm acima do umbigo).'],
+    ['Altura do corpo: frente', 'Do ombro, junto ao pescoço, até a cintura, passando sobre o busto.'],
+    ['Altura do corpo: costas', 'Do ombro, junto ao pescoço, até a cintura, pelas costas.'],
+    ['Altura do centro das costas', 'Da base do pescoço até a cintura, no centro das costas.'],
+    ['Altura do centro da frente', 'Da base do pescoço até a cintura, no centro da frente.'],
+    ['Pescoço', 'Contorno na base do pescoço.'],
+    ['Altura do busto', 'Da base do pescoço até o mamilo, com o sutiã da peça.'],
+    ['Raio do busto', 'Do mamilo até a base do seio.'],
+    ['Distância do busto', 'Entre os mamilos.'],
+    ['Cava a cava: frente', 'Entre as cavas da frente, com o corpo relaxado.'],
+    ['Cava a cava: costas', 'Entre as cavas das costas.'],
+    ['Ombro', 'Da base do pescoço até a ponta do ombro.'],
+    ['Ombro a ombro', 'Entre as pontas dos ombros (frente e costas).'],
+    ['Queda de ombro', 'Régua na horizontal sobre o ombro: distância até a ponta do ombro.'],
+    ['Lateral', 'Da axila até a cintura, com o braço abaixado.'],
+    ['Circunferência da cava', 'Em volta da cava, pela ponta do ombro e por baixo do braço.'],
+  ] },
+  { nome: 'Saia', medidas: [
+    ['Quadril', 'Maior contorno na região das nádegas.'],
+    ['Altura do quadril', 'Da cintura até o maior contorno do quadril, pela lateral.'],
+    ['Altura da saia', 'Da cintura até acima do joelho, pela lateral.'],
+    ['Quadril alto / bacia', 'Contorno acima das nádegas, no osso da bacia.'],
+    ['Quadril baixo', 'Contorno abaixo das nádegas.'],
+    ['Altura da bacia', 'Da cintura até a bacia (para corset, confira sentada).'],
+    ['Altura do quadril baixo', 'Da cintura até abaixo das nádegas, pela lateral.'],
+  ] },
+  { nome: 'Manga', medidas: [
+    ['Braço', 'Contorno logo abaixo da axila, na parte mais larga.'],
+    ['Comprimento da manga', 'Do ombro até o osso do punho (média do braço dobrado e estendido).'],
+    ['Cotovelo dobrado', 'Contorno do cotovelo com o braço dobrado a 90°.'],
+    ['Punho', 'Contorno do pulso, sobre o osso.'],
+    ['Mão', 'Parte mais larga da mão, dedos estendidos e polegar junto.'],
+    ['Altura do cotovelo', 'Do ombro até o osso do cotovelo.'],
+    ['Cabeça da manga', 'Do ombro até a altura da cava.'],
+  ] },
+  { nome: 'Auxiliares', medidas: [
+    ['Circunferência abaixo do busto', 'Contorno logo abaixo do busto.'],
+    ['Transversal da frente', 'Da ponta do ombro até a cintura, no centro da frente.'],
+    ['Transversal das costas', 'Da ponta do ombro até a cintura, no centro das costas.'],
+    ['Altura abaixo do busto', 'Da cintura até a linha abaixo do busto.'],
+    ['Altura do sereia', 'Da cintura até a abertura do sereia (acima do joelho).'],
+    ['Decotes', 'Da base do pescoço até o decote escolhido.'],
+  ] },
 ];
+let n = 0;
+GRUPOS_MEDIDAS.forEach((g) => { g.medidas = g.medidas.map(([nome, dica]) => ({ num: String(++n).padStart(2, '0'), nome, dica })); });
+export const MEDIDAS = GRUPOS_MEDIDAS.flatMap((g) => g.medidas.map((m) => m.nome));
 
 function inicial() {
   return {
     versao: VERSAO,
     criadoEm: agora(),
     atelie: { nome: '', endereco: '', whatsapp: '', orientacoes: structuredClone(ORIENTACOES_PADRAO) },
+    medidasOcultas: [], // medidas do guia que ela não usa
     capacidadeMes: 0, // quantas encomendas ela dá conta por mês (0 = não definido)
     modelos: [],      // listas de etapas salvas por ela (ex.: Noiva)
     ultimoModelo: '', // o modelo escolhido na última encomenda
@@ -52,6 +100,7 @@ export const get = () => state;
 function migrar() {
   // Quem já usava o app ganha os campos novos do ateliê, com as orientações sugeridas.
   state.atelie = { endereco: '', whatsapp: '', orientacoes: structuredClone(ORIENTACOES_PADRAO), ...state.atelie };
+  if (!Array.isArray(state.medidasOcultas)) state.medidasOcultas = [];
   state.encomendas.forEach(migrarEtapas);
   state.alugueis.forEach(migrarEtapas);
 }
