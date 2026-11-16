@@ -355,6 +355,23 @@ export function linkGoogleAgenda({ titulo, data, hora = '', descricao = '' }) {
 
 // ---------- WhatsApp ----------
 
+// Formata enquanto ela digita: "11987654321" → "(11) 98765-4321"; fixo: "(11) 3456-7890".
+// Número com "+" (de fora do Brasil) fica como ela escreveu.
+export function formatarTelefone(v) {
+  const txt = String(v || '');
+  if (txt.trim().startsWith('+')) return txt;
+  let d = txt.replace(/\D/g, '');
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2);
+  d = d.slice(0, 11);
+  if (!d) return '';
+  if (d.length <= 2) return `(${d}`;
+  const ddd = d.slice(0, 2);
+  const r = d.slice(2);
+  if (r.length <= 4) return `(${ddd}) ${r}`;
+  const corte = r.length === 9 ? 5 : 4;
+  return `(${ddd}) ${r.slice(0, corte)}-${r.slice(corte)}`;
+}
+
 // "(11) 98765-4321" → "5511987654321"
 export function numeroWhats(tel) {
   let d = String(tel || '').replace(/\D/g, '');

@@ -1,6 +1,6 @@
 // Guarda o app no celular para abrir sem internet.
 // Ao publicar uma versão nova, mude VERSAO para o celular baixar os arquivos novos.
-const VERSAO = 'ad-v10';
+const VERSAO = 'ad-v12';
 const ARQUIVOS = [
   './', 'index.html', 'css/app.css', 'js/app.js', 'js/regras.js', 'js/store.js', 'js/lembrete.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
@@ -33,6 +33,13 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   if (url.origin !== location.origin) return;
+  // "Pôr na agenda" no iPhone: o app monta o evento e entrega aqui como arquivo de agenda.
+  if (url.pathname.endsWith('/agenda.ics')) {
+    e.respondWith(new Response(url.searchParams.get('ics') || '', {
+      headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'inline; filename="agenda.ics"' },
+    }));
+    return;
+  }
   e.respondWith(
     fetch(req).then((res) => {
       const copia = res.clone();

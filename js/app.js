@@ -5,6 +5,7 @@ import {
   hojeISO, somaDias, diasEntre, dataBR, diaMes, quando, etapasEncomenda, etapasAluguel, infoEtapa, adicionarEtapa, removerEtapa,
   moverEtapa, modeloDe, VERSAO_ETAPAS, etapa, provaAnterior, marcarEtapa, semana, periodo, conflitos, situacaoPeca, arquivoAgenda, linkGoogleAgenda,
   linkWhats, mensagemProva, mensagemPronta, RETIRADA_ANTES, DEVOLUCAO_DEPOIS, apertados, DIAS_HIGIENIZACAO, GRUPOS, resumoMeses, somaMeses, lotacao,
+  formatarTelefone,
 } from './regras.js';
 
 const S = () => store.get();
@@ -78,6 +79,13 @@ const cab = (titulo, sub = '', voltar = '') => `
     <div><h1>${titulo}</h1>${sub ? `<p>${sub}</p>` : ''}</div>
   </header>`;
 const cartao = (conteudo, cls = '', attrs = '') => `<section class="cartao ${cls}" ${attrs}>${conteudo}</section>`;
+// Ícones desenhados (no lugar de emoji, que fica pequeno e diferente em cada celular).
+const ICONES = {
+  agenda: '<rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M16 2.5v4M8 2.5v4M3 10h18"/>',
+  conversa: '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4-.9L3 20.5l1.5-4.6A8.4 8.4 0 0 1 3 11.5 8.6 8.6 0 0 1 12 3a8.6 8.6 0 0 1 9 8.5z"/>',
+  ok: '<path d="M20 6 9 17l-5-5"/>',
+};
+const ico = (nome) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONES[nome]}</svg>`;
 const rotulo = (texto, controle, ajuda = '') => `<label class="campo"><span>${texto}</span>${controle}${ajuda ? `<small>${ajuda}</small>` : ''}</label>`;
 
 let desfazer = null;
@@ -181,12 +189,13 @@ function itemDe(c) {
 const nomePeca = (item) => (item.tipo === 'aluguel' ? (S().pecas.find((p) => p.id === item.pecaId)?.nome || 'Peça apagada') : item.peca);
 const linkItem = (item) => (item.tipo === 'aluguel' ? `#/locacao/${item.id}` : `#/encomenda/${item.id}`);
 
-// Hoje e amanhã: atalho para mandar o lembrete (ou mostra que já foi).
+// Tudo em que a cliente precisa vir (prova, medidas, entrega, retirada, devolução):
+// atalho para mandar o lembrete, ou mostra que já foi.
 function lembrarNaSemana(c, item) {
   const d = diasEntre(hojeISO(), c.data);
-  if (d < 0 || d > 1 || c.semData || !tipoLembrete(item, c.k)) return '';
+  if (d < 0 || c.semData || !tipoLembrete(item, c.k)) return '';
   const e = etapa(item, c.k);
-  return `<a class="comp-lembrar ${e.lembreteEm ? 'ok' : ''}" href="#/lembrete/${item.id}/${c.k}">${e.lembreteEm ? '✓ Cliente lembrada' : 'Lembrar a cliente'}</a>`;
+  return `<a class="comp-lembrar ${e.lembreteEm ? 'ok' : ''}" href="#/lembrete/${item.id}/${c.k}">${e.lembreteEm ? `${ico('ok')}Cliente lembrada` : `${ico('conversa')}Lembrar a cliente`}</a>`;
 }
 
 function linhaCompromisso(c, atrasado = false) {
@@ -387,8 +396,9 @@ telas.novo = {
     if (tipo === 'encomenda' && n.passo === 3) {
       return `${cabPasso('Já tem datas marcadas?', n, 'Opcional. Com data, a prova e a entrega aparecem na aba Semana.')}
         ${cartao(`
-          <div class="campo"><span>Primeira prova</span><div class="duplo">
-            ${campo('ui.novo.prova', n.prova, 'date', 'aria-label="Data da primeira prova"')}${campo('ui.novo.provaHora', n.provaHora, 'time', 'aria-label="Hora da primeira prova"')}
+          <div class="campo"><span>Primeira prova</span><div class="dia-hora">
+            <label class="mini-campo"><span>Dia</span>${campo('ui.novo.prova', n.prova, 'date', 'aria-label="Dia da primeira prova"')}</label>
+            <label class="mini-campo"><span>Horário</span>${campo('ui.novo.provaHora', n.provaHora, 'time', 'aria-label="Horário da primeira prova"')}</label>
           </div></div>
           ${rotulo('Entrega', campo('ui.novo.entrega', n.entrega, 'date'), n.evento ? `O evento é em ${dataBR(n.evento)}. Sem data de entrega, o app usa a do evento.` : '')}
         `)}
@@ -520,10 +530,10 @@ function linhaEtapa(item, def, raiz) {
     </button>
     ${def.data && !mostraData && !e.feitaEm ? `<button class="link mais-data" data-acao="abrirData" data-k="${def.k}">+ data</button>` : ''}
     ${mostraData ? `<div class="etapa-data">
-        ${campo(`${b}.data`, e.data, 'date', `aria-label="Data: ${esc(def.rotulo || def.nome)}"`)}
-        ${campo(`${b}.hora`, e.hora, 'time', `aria-label="Hora: ${esc(def.rotulo || def.nome)}"`)}
-        ${e.data ? `<button class="link agenda ${naAgenda ? 'ok' : ''}" data-acao="agenda" data-k="${def.k}">${naAgenda ? '✓ Na agenda' : e.agendaEm ? 'A data mudou · pôr de novo' : 'Pôr na agenda'}</button>` : ''}
-        ${e.data && !e.feitaEm && tipoLembrete(item, def.k) ? `<a class="link lembrar ${e.lembreteEm ? 'ok' : ''}" href="#/lembrete/${item.id}/${def.k}">${e.lembreteEm ? `✓ Cliente lembrada em ${diaMes(e.lembreteEm)}` : 'Lembrar a cliente'}</a>` : ''}
+        <label class="mini-campo"><span>Dia</span>${campo(`${b}.data`, e.data, 'date', `aria-label="Dia: ${esc(def.rotulo || def.nome)}"`)}</label>
+        <label class="mini-campo"><span>Horário</span>${campo(`${b}.hora`, e.hora, 'time', `aria-label="Horário: ${esc(def.rotulo || def.nome)}"`)}</label>
+        ${e.data ? `<div class="acoes-etapa"><button class="acao-etapa ${naAgenda ? 'ok' : ''}" data-acao="agenda" data-k="${def.k}">${naAgenda ? `${ico('ok')}Na agenda` : `${ico('agenda')}${e.agendaEm ? 'Data mudou: pôr de novo' : 'Pôr na agenda'}`}</button>` : ''}
+        ${e.data && !e.feitaEm && tipoLembrete(item, def.k) ? `<a class="acao-etapa ${e.lembreteEm ? 'ok' : ''}" href="#/lembrete/${item.id}/${def.k}">${e.lembreteEm ? `${ico('ok')}Lembrada em ${diaMes(e.lembreteEm)}` : `${ico('conversa')}Lembrar a cliente`}</a>` : ''}${e.data ? '</div>' : ''}
       </div>` : ''}
     ${def.prova && (e.feitaEm || e.notas) ? `<div class="notas-prova">${rotulo('O que ficou decidido', area(`${b}.notas`, e.notas, 'placeholder="Ex.: subir a barra 2 cm"'))}</div>` : ''}
     ${anterior && !e.feitaEm ? `<div class="nota-anterior"><b>Da ${infoEtapa(item, anterior).nome}${anterior.feitaEm ? ` (${diaMes(anterior.feitaEm)})` : ''}:</b> ${esc(anterior.notas)}</div>` : ''}
@@ -1040,7 +1050,11 @@ function porNaAgenda(item, k) {
   } else {
     const ics = arquivoAgenda(ev);
     if (ehIOS()) {
-      window.open(`data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`, '_blank');
+      // O iPhone bloqueia abrir o arquivo em outra aba (e no app instalado ela nem existe).
+      // O próprio app (service worker) entrega o arquivo num endereço dele, na mesma tela,
+      // e o iPhone mostra "Adicionar à agenda".
+      if (navigator.serviceWorker?.controller) location.href = `agenda.ics?ics=${encodeURIComponent(ics)}`;
+      else location.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
     } else {
       store.baixar(new Blob([ics], { type: 'text/calendar' }), `${def.rotulo}.ics`.replace(/[^\wÀ-ú .-]/g, ''));
     }
@@ -1309,6 +1323,11 @@ const acoes = {
 document.addEventListener('input', (ev) => {
   const el = ev.target;
   if (!el.dataset?.bind || ['date', 'time', 'checkbox'].includes(el.type)) return;
+  // Telefone: põe parênteses, espaço e traço sozinho (só quando ela digita no fim, para não pular o cursor).
+  if (el.type === 'tel' && el.selectionStart === el.value.length) {
+    const f = formatarTelefone(el.value);
+    if (f !== el.value) el.value = f;
+  }
   setPath(el.dataset.bind, el.value);
   // Atualizações parciais, sem tirar o foco do campo.
   if (el.dataset.bind === 'ui.novo.cliente') document.getElementById('sugestoes').innerHTML = sugestoesCliente(el.value);
@@ -1339,6 +1358,7 @@ document.addEventListener('change', (ev) => {
   // Data e hora: só guarda. Redesenhar agora fecharia o calendário do celular no meio da escolha
   // (o iPhone já preenche a data de hoje ao abrir). A tela atualiza quando ela sai do campo.
   if (el.dataset?.bind && ['date', 'time'].includes(el.type)) { setPath(el.dataset.bind, el.value); redesenhoPendente = true; return; }
+  if (el.dataset?.bind && el.type === 'tel') { el.value = formatarTelefone(el.value); setPath(el.dataset.bind, el.value); return; }
   if (el.dataset?.bind === 'capacidadeMes') { setPath('capacidadeMes', Math.max(0, Math.round(Number(el.value) || 0))); render(); return; }
   if (el.dataset?.acao === 'importar' && el.files[0]) {
     if (!confirm('Restaurar este backup? Os dados atuais deste aparelho serão substituídos.')) { el.value = ''; return; }
