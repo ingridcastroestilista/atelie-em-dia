@@ -451,3 +451,17 @@ button.voltar { background: none; border: 0; cursor: pointer; font-family: inher
 .ed-linha .btn { margin-left: auto; }
 .mais-item { margin: 8px 0 4px; }
 .cartao .chips { margin-top: 10px; }
+.ficha-btn.acoes-etapa { justify-content: space-between; }
+.item-compra { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 6px 0; background: none; border: 0; border-bottom: 1px solid var(--line); font: 500 17px var(--sans); color: var(--ink); text-align: left; cursor: pointer; }
+.item-compra .nome { flex: 1; min-width: 0; }
+.item-compra b { flex: none; font-weight: 600; }
+.item-compra.feita .bola { background: var(--marsala); }
+.item-compra.feita .nome, .item-compra.feita b { color: var(--ink-3); text-decoration: line-through; }
+/* Cartão que abre e fecha com um toque no título */
+.abre-cartao { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 0; background: none; border: 0; text-align: left; cursor: pointer; color: inherit; font: inherit; }
+.abre-cartao h2 { margin: 0; }
+.abre-cartao small { display: block; margin-top: 4px; font-size: 15px; color: var(--marsala); font-weight: 600; }
+.abre-cartao small.ok-txt { color: var(--ok); }
+.abre-cartao .seta { flex: none; width: 26px; height: 26px; fill: none; stroke: var(--marsala); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; transition: transform .2s; }
+.abre-cartao .seta.aberta { transform: rotate(90deg); }
+.cartao:not(.cartao-fechado) > .abre-cartao { margin-bottom: 8px; }

@@ -88,6 +88,7 @@ const ICONES = {
   conversa: '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4-.9L3 20.5l1.5-4.6A8.4 8.4 0 0 1 3 11.5 8.6 8.6 0 0 1 12 3a8.6 8.6 0 0 1 9 8.5z"/>',
   ok: '<path d="M20 6 9 17l-5-5"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
+  sacola: '<path d="M5 8h14l-1.2 12.1a1 1 0 0 1-1 .9H7.2a1 1 0 0 1-1-.9z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
   ficha: '<path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/>',
 };
 const ico = (nome) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONES[nome]}</svg>`;
@@ -106,6 +107,32 @@ function mostrarFotos(raiz = document) {
   raiz.querySelectorAll('img[data-foto]:not([src])').forEach((img) => {
     enderecoFoto(img.dataset.foto).then((u) => { if (u) img.src = u; else img.closest('.foto-mini, .mini-lista')?.classList.add('sem-foto'); }).catch(() => {});
   });
+}
+
+// Lista de compra: o que faltava comprar quando ela abriu (o que ela marca fica riscado até fechar).
+function itensCompra(e) {
+  const ids = new Set(ui.compras?.ids || []);
+  return [['Tecidos', e.plano.tecidos], ['Aviamentos', e.plano.aviamentos]]
+    .map(([nome, lista]) => [nome, lista.filter((a) => ids.has(a.id))]).filter(([, l]) => l.length);
+}
+function textoCompras(e) {
+  const pend = itensCompra(e).map(([nome, l]) => [nome, l.filter((a) => !a.ok)]).filter(([, l]) => l.length);
+  return [`*Lista de compra · ${e.peca}*`, ...pend.map(([nome, l]) => `\n${nome}:\n${l.map((a) => `- ${a.nome}${a.qtd ? ` (${a.qtd})` : ''}`).join('\n')}`)].join('\n');
+}
+function folhaCompras() {
+  const e = S().encomendas.find((x) => x.id === ui.compras.id);
+  if (!e) { ui.compras = null; return ''; }
+  const grupos = itensCompra(e);
+  const faltam = grupos.flatMap(([, l]) => l).filter((a) => !a.ok).length;
+  return `<div class="folha-fundo" data-acao="fecharCompras"></div>
+    <div class="folha" role="dialog" aria-label="Lista de compra">
+      <p class="ajuda">${esc(e.peca)} · ${esc(nomeCliente(e.clienteId))}</p>
+      <h2>${faltam ? `Falta comprar (${faltam})` : 'Tudo comprado ✓'}</h2>
+      ${grupos.map(([nome, l]) => `<h3 class="sub-plano">${nome}</h3><div class="lista-plano">${l.map((a) => `<button class="item-compra ${a.ok ? 'feita' : ''}" data-acao="comprado" data-id="${a.id}" aria-pressed="${a.ok}">
+          <span class="bola">${a.ok ? '✓' : ''}</span><span class="nome">${esc(a.nome)}</span>${a.qtd ? `<b>${esc(a.qtd)}</b>` : ''}</button>`).join('')}</div>`).join('')}
+      <p class="ajuda">Toque no que já comprou.</p>
+      <div class="acoes">${faltam ? '<button class="btn" data-acao="mandarCompras">Mandar a lista</button>' : ''}<button class="btn sec" data-acao="fecharCompras">Fechar</button></div>
+    </div>`;
 }
 
 // Visualizar uma foto em tela cheia, com a opção de apagar.
@@ -167,9 +194,12 @@ function render() {
   // Primeiro acesso (ou o resumo "Tudo pronto!" logo depois dele) no lugar da tela inicial.
   if (nome === 'semana' && (!S().inicioFeito || ui.comecar > PASSOS_ATELIE)) nome = 'comecar';
   if (ui.recem && ui.recem.id !== id) ui.recem = null;
+  if (ui.compras && ui.compras.id !== id) ui.compras = null;
+  if (ui.planoAberto && ui.planoAberto !== id) ui.planoAberto = null; // saiu da encomenda: o planejamento volta fechado
+  if (ui.todasEtapas && ui.todasEtapas !== id) ui.todasEtapas = null; // e as etapas também
   telaAtual = telas[nome];
   if (nome === 'comecar') { $main.innerHTML = telaAtual.render() + SELO; document.body.dataset.tela = nome; telaAtual.depois?.(); return; }
-  $main.innerHTML = telaAtual.render(id, extra) + SELO + (ui.notas ? folhaNotas() : '') + (ui.foto ? folhaFoto() : '');
+  $main.innerHTML = telaAtual.render(id, extra) + SELO + (ui.notas ? folhaNotas() : '') + (ui.compras ? folhaCompras() : '') + (ui.foto ? folhaFoto() : '');
   mostrarFotos($main);
   document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('ativo', a.dataset.tela === (telaAtual.aba || nome)));
   document.body.dataset.tela = nome;
@@ -188,7 +218,7 @@ function guia(titulo, passos, ocultar) {
   if (feitos === passos.length) return '';
   return cartao(`
     <div class="cartao-cab"><h2>${titulo}</h2><span class="guia-cont">${feitos} de ${passos.length}</span></div>
-    <ol class="guia">${passos.map((p) => `<li class="${p.feito ? 'ok' : ''}">
+    <ol class="guia">${passos.filter((p) => !p.feito).map((p) => `<li class="${p.feito ? 'ok' : ''}">
       <span class="guia-bola" aria-hidden="true">${p.feito ? '✓' : ''}</span>
       <div class="guia-txt"><b>${p.texto}</b>${p.ajuda && !p.feito ? `<small>${p.ajuda}</small>` : ''}</div>
       ${!p.feito && p.botao ? `<div class="guia-btn">${p.botao}</div>` : ''}
@@ -680,7 +710,17 @@ function cartaoPlano(e) {
   const p = e.plano;
   const temAv = new Set(p.aviamentos.map((a) => a.nome.trim().toLowerCase()));
   const sugestoes = AVIAMENTOS_COMUNS.filter((n) => ![...temAv].some((t) => t.startsWith(n.toLowerCase())));
-  return cartao(`<h2>Planejamento da peça</h2>
+  const faltam = [...p.tecidos, ...p.aviamentos].filter((a) => a.nome.trim() && !a.ok).length;
+  const vazio = !p.tecidos.length && !p.aviamentos.length && !e.obs?.trim();
+  // Fechado (só o título e quanto falta comprar); ela toca para abrir. Começando do zero, já vem aberto.
+  if (vazio) ui.planoAberto = e.id;
+  const aberto = ui.planoAberto === e.id;
+  const resumo = faltam ? `${faltam} para comprar` : p.tecidos.length || p.aviamentos.length ? 'Tudo comprado ✓' : '';
+  const cabecalho = `<button class="abre-cartao" data-acao="abrirPlano" aria-expanded="${aberto}">
+      <span><h2>Planejamento da peça</h2>${resumo ? `<small class="${faltam ? '' : 'ok-txt'}">${resumo}</small>` : ''}</span>
+      ${setaCartao(aberto)}</button>`;
+  if (!aberto) return cartao(cabecalho, 'cartao-fechado', 'id="plano"');
+  return cartao(`${cabecalho}
     <p class="ajuda">Toque na bolinha do que já tem. Toque no nome para mudar.</p>
     <h3 class="sub-plano">Tecidos</h3>
     ${listaPlano(e, 'tecidos', 'Ex.: Zibeline (saia)')}
@@ -692,7 +732,9 @@ function cartaoPlano(e) {
     ${rotulo('Observações', area(`encomendas#${e.id}.obs`, e.obs, 'rows="4" placeholder="Ex.: pence dupla nas costas, barra feita à mão"'))}
     <h3 class="sub-plano">Croqui da ficha</h3>
     <div class="chips">${CROQUIS.map(([k, nome]) => `<button class="chip ${(e.croqui || 'adulta') === k ? 'on' : ''}" data-acao="escolherCroqui" data-v="${k}">${nome}</button>`).join('')}</div>
-    <a class="acao-etapa ficha-btn" href="#/fichaPeca/${e.id}">${ico('ficha')}Ficha da peça para imprimir</a>`);
+    <div class="acoes-etapa ficha-btn">
+      ${faltam ? `<button class="acao-etapa" data-acao="abrirCompras">${ico('sacola')}Lista de compra (${faltam})</button>` : ''}
+      <a class="acao-etapa" href="#/fichaPeca/${e.id}">${ico('ficha')}Ficha para imprimir</a></div>`, '', 'id="plano"');
 }
 
 function guiaEncomenda(e, c) {
@@ -715,6 +757,24 @@ function guiaEncomenda(e, c) {
   ], 'ocultarGuia');
 }
 
+// Etapas da encomenda: fechado, mostra só a próxima por fazer (a feita sai e entra a seguinte).
+// Um toque no título abre a lista inteira, para desfazer, ver as anotações ou personalizar.
+const setaCartao = (aberto) => `<svg class="seta ${aberto ? 'aberta' : ''}" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
+function cartaoEtapas(e) {
+  const pend = e.etapas.filter((x) => !x.feitaEm);
+  const todas = ui.todasEtapas === e.id;
+  const aberta = ui.abrirData?.startsWith(`${e.id}:`) ? ui.abrirData.split(':')[1] : '';
+  // A etapa que ela mandou marcar a data (pelos próximos passos) aparece mesmo se não for a próxima.
+  const mostrar = todas ? e.etapas : e.etapas.filter((x) => x === pend[0] || x.k === aberta);
+  const resumo = pend.length ? `Faltam ${pend.length} de ${e.etapas.length}` : 'Todas feitas ✓';
+  return `<button class="abre-cartao" id="etapas" data-acao="verTodasEtapas" aria-expanded="${todas}">
+      <span><h2>Etapas</h2><small class="${pend.length ? '' : 'ok-txt'}">${resumo}</small></span>${setaCartao(todas)}</button>
+    ${!todas && pend.length ? '<p class="ajuda">A próxima. Toque para marcar como feita.</p>' : ''}
+    ${todas ? '<p class="ajuda">Toque numa etapa para marcar como feita, ou numa feita para desfazer.</p>' : ''}
+    ${mostrar.map((x) => linhaEtapa(e, infoEtapa(e, x), 'encomendas')).join('')}
+    ${todas ? '<button class="link mais-item" data-acao="editEtapas">Personalizar as etapas</button>' : ''}`;
+}
+
 telas.encomenda = {
   aba: 'encomendas',
   render(id) {
@@ -724,14 +784,12 @@ telas.encomenda = {
     const b = `encomendas#${e.id}`;
     return `
       ${cab(esc(e.peca), `<a href="#/cliente/${e.clienteId}">${esc(nomeCliente(e.clienteId))}</a> · evento ${dataBR(e.evento)}, ${faltam(e.evento)}`, '#/encomendas')}
-      ${guiaEncomenda(e, c)}
       ${e.status !== 'andamento' ? `<p class="alerta ${e.status === 'cancelada' ? 'perigo' : 'ok'}">${e.status === 'cancelada' ? 'Encomenda cancelada.' : 'Encomenda entregue.'}</p>` : ''}
-      ${cartao(ui.editEtapas === e.id ? editorEtapas(e) : `<div class="cartao-cab" id="etapas"><h2>Etapas</h2><button class="link" data-acao="editEtapas">Personalizar</button></div>
-        <p class="ajuda">Toque numa etapa para marcar como feita. Para mudar a lista, toque em <b>Personalizar</b>. Etapa com data aparece na aba <b>Semana</b>.</p>
-        ${e.etapas.map((x) => linhaEtapa(e, infoEtapa(e, x), 'encomendas')).join('')}`)}
-      ${cartaoPlano(e)}
       ${cartao(`<h2>Fotos de referência</h2><p class="ajuda">O modelo que a cliente trouxe, o croqui, o tecido. A primeira aparece na lista de encomendas, para achar mais fácil.</p>${galeria(b, e.fotos)}`)}
       ${cartaoWhats(e, c)}
+      ${guiaEncomenda(e, c)}
+      ${cartaoPlano(e)}
+      ${cartao(ui.editEtapas === e.id ? editorEtapas(e) : cartaoEtapas(e))}
       ${cartao(`<h2>Dados da encomenda</h2>
         ${rotulo('Peça', campo(`${b}.peca`, e.peca))}
         ${rotulo('Data do evento', campo(`${b}.evento`, e.evento, 'date'))}`)}
@@ -1365,9 +1423,38 @@ const acoes = {
     const item = itemDaRota();
     const k = el.dataset.k;
     if (etapa(item, k).feitaEm) { marcarEtapa(item, k, false); tocar(item); store.salvar(); render(); return; }
-    concluirEtapa(item, k);
-    if (infoEtapa(item, k).prova) { ui.notas = null; render(); document.querySelector(`[data-bind$="etapas#${k}.notas"]`)?.focus(); }
+    concluirEtapa(item, k); // prova: abre a folha "O que ficou decidido?"
   },
+  abrirPlano() {
+    const e = itemDaRota();
+    const fechando = ui.planoAberto === e.id;
+    ui.planoAberto = fechando ? null : e.id; ui.editPlano = null;
+    if (fechando) for (const l of ['tecidos', 'aviamentos']) e.plano[l] = e.plano[l].filter((x) => x.nome.trim());
+    store.salvar(); const y = window.scrollY; render(); window.scrollTo(0, y);
+  },
+  // Lista de compra: o que falta comprar, para levar na loja.
+  abrirCompras() {
+    const e = itemDaRota();
+    ui.compras = { id: e.id, ids: [...e.plano.tecidos, ...e.plano.aviamentos].filter((a) => a.nome.trim() && !a.ok).map((a) => a.id) };
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+  },
+  fecharCompras() { ui.compras = null; const y = window.scrollY; render(); window.scrollTo(0, y); },
+  comprado(el) {
+    const e = itemDaRota();
+    const a = [...e.plano.tecidos, ...e.plano.aviamentos].find((x) => x.id === el.dataset.id);
+    if (!a) return;
+    a.ok = !a.ok; tocar(e); store.salvar();
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+  },
+  async mandarCompras() {
+    const e = itemDaRota();
+    const texto = textoCompras(e);
+    try {
+      if (navigator.share) await navigator.share({ text: texto });
+      else { await navigator.clipboard.writeText(texto); toast('Lista copiada. É só colar no WhatsApp.'); }
+    } catch (err) { if (err.name !== 'AbortError') toast('Não foi possível mandar.'); }
+  },
+  verTodasEtapas() { const item = itemDaRota(); ui.todasEtapas = ui.todasEtapas === item.id ? null : item.id; const y = window.scrollY; render(); window.scrollTo(0, y); },
   agenda(el) { porNaAgenda(itemDaRota(), el.dataset.k); },
   escolherCliente(el) { ui.novo.cliente = el.dataset.nome; render(); },
   escolherPeca(el) { ui.novo.pecaId = ui.novo.pecaId === el.dataset.id ? '' : el.dataset.id; ui.novo.peca = ''; render(); },
@@ -1506,7 +1593,7 @@ const acoes = {
     const campoData = document.querySelector(`[data-bind$="etapas#${el.dataset.k}.data"]`);
     campoData?.scrollIntoView({ block: 'center' }); campoData?.focus();
   },
-  focarEtapas() { document.getElementById('etapas')?.scrollIntoView({ block: 'start' }); },
+  focarEtapas() { const item = itemDaRota(); if (item?.tipo === 'encomenda') { ui.todasEtapas = item.id; render(); } document.getElementById('etapas')?.scrollIntoView({ block: 'start' }); },
   focarWhats() { ui.focoWhats = true; if (rota().nome === 'cliente') { render(); } },
   editEtapas() { const item = itemDaRota(); ui.editEtapas = ui.editEtapas === item.id ? null : item.id; ui.novaEtapa = ''; ui.nomeModelo = ''; render(); },
   moverEtapa(el) { const item = itemDaRota(); if (moverEtapa(item, el.dataset.k, Number(el.dataset.d))) { tocar(item); store.salvar(); render(); } },
