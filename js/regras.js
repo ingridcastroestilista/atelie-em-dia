@@ -40,7 +40,7 @@ export function quando(iso, hoje = hojeISO()) {
 // dataPadrao: o campo de data já aparece aberto (nas outras, fica atrás de "+ data").
 export const ETAPAS_ENCOMENDA = [
   { k: 'medidas', nome: 'Tirar medidas', grupo: 'producao', data: true },
-  { k: 'tecido', nome: 'Comprar tecido e aviamentos', rotulo: 'Comprar tecido', grupo: 'producao', data: true },
+  { k: 'tecido', nome: 'Comprar materiais', grupo: 'producao', data: true },
   { k: 'modelagem', nome: 'Modelagem', grupo: 'producao', data: true },
   { k: 'corte', nome: 'Corte', grupo: 'producao', data: true },
   { k: 'prova1', nome: 'Prova 1', grupo: 'prova', data: true, dataPadrao: true, prova: true },
@@ -265,12 +265,12 @@ export function resumoMeses(s, inicio, qtd = 12) {
   });
 }
 
-// Lotação do mês em relação ao limite que ela definiu.
-export function lotacao(qtd, limite) {
-  if (!limite) return 'sem-limite';
-  if (qtd > limite) return 'acima';
-  if (qtd === limite) return 'cheio';
-  return 'livre';
+// Como o mês está em relação à meta (o que ela quer alcançar) e ao limite (o máximo que dá conta).
+// 'acima' = passou do limite (barra vermelha); 'meta' = bateu a meta (verde); 'abaixo'; 'sem' = nada definido.
+export function situacaoMes(qtd, meta, limite) {
+  if (limite && qtd > limite) return 'acima';
+  if (meta && qtd >= meta) return 'meta';
+  return meta || limite ? 'abaixo' : 'sem';
 }
 
 // ---------- Aluguel: período ocupado e conflito ----------

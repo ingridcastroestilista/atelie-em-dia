@@ -1,13 +1,13 @@
 import * as store from './store.js';
 import { protegerApp } from './acesso.js';
-import { conteudoFicha, imagemFicha } from './ficha.js';
+import { conteudoFicha, imagemFicha, conteudoPeca, imagensPeca, normalizarPlano, AVIAMENTOS_COMUNS, CROQUIS } from './ficha.js';
 import { guardarFoto, enderecoFoto, apagarFoto, limparSoltas } from './fotos.js';
 import { tipoLembrete, conteudoLembrete, textoLembrete, imagemLembrete, ORIENTACOES_PADRAO } from './lembrete.js';
 import { uid, agora, tocar, MEDIDAS, GRUPOS_MEDIDAS, acharCliente, clientePorNome, novaCliente } from './store.js';
 import {
   hojeISO, somaDias, diasEntre, dataBR, diaMes, quando, etapasEncomenda, etapasAluguel, infoEtapa, adicionarEtapa, removerEtapa,
   moverEtapa, modeloDe, VERSAO_ETAPAS, etapa, provaAnterior, marcarEtapa, semana, periodo, conflitos, situacaoPeca, arquivoAgenda, linkGoogleAgenda,
-  linkWhats, mensagemProva, mensagemPronta, MENSAGENS_PADRAO, apertados, prazos, PRAZOS_PADRAO, configurarPrazos, prazoValido, GRUPOS, resumoMeses, somaMeses, lotacao,
+  linkWhats, mensagemProva, mensagemPronta, MENSAGENS_PADRAO, apertados, prazos, PRAZOS_PADRAO, configurarPrazos, prazoValido, GRUPOS, resumoMeses, somaMeses, situacaoMes,
   formatarTelefone, fotosUsadas,
 } from './regras.js';
 
@@ -19,7 +19,7 @@ const ui = {
   busca: '', filtroEnc: 'andamento', abaAluguel: 'pecas', mesPeca: hojeISO().slice(0, 7), novo: null, medicao: null, notas: null, novaPeca: '',
   inicioMeses: hojeISO().slice(0, 7), abrirData: null,
   editEtapas: null, novaEtapa: '', novaEtapaProva: false, nomeModelo: '', // personalizar etapas
-  recem: null, novaCliente: { nome: '', whatsapp: '' }, // recem: { id } do que acabou de ser cadastrado // abrirData: 'id:k' da etapa com "+ data" aberto
+  editPlano: null, recem: null, novaCliente: { nome: '', whatsapp: '' }, // recem: { id } do que acabou de ser cadastrado // abrirData: 'id:k' da etapa com "+ data" aberto
 };
 
 // ---------- Texto ----------
@@ -515,38 +515,65 @@ const STATUS_ENC = { andamento: 'Em andamento', entregue: 'Entregues', cancelada
 const abasEnc = () => `<div class="seg" role="radiogroup">${Object.entries({ andamento: 'Em andamento', ano: '12 meses', entregue: 'Entregues' })
   .map(([k, t]) => `<button role="radio" aria-checked="${ui.filtroEnc === k}" data-acao="filtroEnc" data-v="${k}">${t}</button>`).join('')}</div>`;
 
-// Visão do ano: quantas encomendas caem em cada mês, contra o limite que ela dá conta.
+// Visão do ano: quantas encomendas e quantos aluguéis caem em cada mês, contra a meta e o limite dela.
+const CAMPOS_METAS = [
+  ['Sob medida', 'metaSobMedida', 'capacidadeMes'],
+  ['Aluguel', 'metaAluguel', 'limiteAluguel'],
+];
+const numMeta = (k) => Number(S()[k]) || 0;
+function camposMetas() {
+  return `<div class="metas">${CAMPOS_METAS.map(([nome, meta, limite]) => `<div class="metas-tipo"><b>${nome}</b>
+      <label class="limite"><span>Meta</span><input type="number" inputmode="numeric" min="0" data-bind="${meta}" value="${numMeta(meta) || ''}" placeholder="—"></label>
+      <label class="limite"><span>Limite</span><input type="number" inputmode="numeric" min="0" data-bind="${limite}" value="${numMeta(limite) || ''}" placeholder="—"></label>
+    </div>`).join('')}</div>
+    <p class="ajuda"><b>Meta:</b> quanto você quer fazer no mês. Bateu, a barra fica verde. <b>Limite:</b> o máximo que você dá conta. Passou, fica vermelha.</p>`;
+}
+
 function visaoAno() {
   const s = S();
   const meses = resumoMeses(s, ui.inicioMeses);
-  const limite = Number(s.capacidadeMes) || 0;
-  const maior = Math.max(limite, ...meses.map((m) => m.encomendas.length), 1);
   const esteMes = hojeISO().slice(0, 7);
-  const TXT = { livre: 'cabe mais', cheio: 'lotado', acima: 'acima do limite', 'sem-limite': '' };
+  const tipos = [
+    { nome: 'Sob medida', meta: numMeta('metaSobMedida'), limite: numMeta('capacidadeMes'), qtd: (m) => m.encomendas.length },
+    { nome: 'Aluguel', meta: numMeta('metaAluguel'), limite: numMeta('limiteAluguel'), qtd: (m) => m.alugueis.length },
+  ];
+  for (const t of tipos) t.maior = Math.max(t.meta, t.limite, ...meses.map(t.qtd), 1) * 1.1;
+  // Uma barra: quanto já tem, o risquinho da meta, a faixa vermelha clarinha depois do limite e o número ao lado.
+  const barra = (t, n, sit) => `<span class="linha-meta ${sit}">
+      <span class="meta-nome">${t.nome}</span>
+      <span class="barra-mes">${t.limite ? `<u style="left:${(t.limite / t.maior) * 100}%"></u>` : ''}<i style="width:${Math.min(100, (n / t.maior) * 100)}%"></i>${t.meta ? `<em style="left:${(t.meta / t.maior) * 100}%"></em>` : ''}</span>
+      <span class="mes-qtd"><b>${n}</b>${t.meta ? ` de ${t.meta}` : t.limite ? ` de ${t.limite}` : ''}${sit === 'meta' ? ' ✓' : ''}</span></span>`;
   return `
     <div class="cal-cab"><button data-acao="meses" data-d="-12" aria-label="12 meses antes">‹</button>
       <b>${ui.inicioMeses === esteMes ? 'Próximos 12 meses' : `${mesCurtoAno(meses[0].mes)} a ${mesCurtoAno(meses[11].mes)}`}</b>
       <button data-acao="meses" data-d="12" aria-label="12 meses depois">›</button></div>
-    ${cartao(`<label class="limite"><span>Limite de sob medida por mês</span>
-      <input type="number" inputmode="numeric" min="0" data-bind="capacidadeMes" value="${limite || ''}" placeholder="Ex.: 6"></label>
-      <p class="ajuda">Aluguel não consome o limite.</p>`)}
+    ${cartao(camposMetas())}
     <div class="ano">${meses.map((m) => {
-      const n = m.encomendas.length;
-      const lot = lotacao(n, limite);
       const passado = m.mes < esteMes;
-      return `<details class="mes-ano ${lot} ${passado ? 'passado' : ''} ${m.mes === esteMes ? 'atual' : ''}">
+      const linhas = tipos.map((t) => ({ t, n: t.qtd(m), sit: situacaoMes(t.qtd(m), t.meta, t.limite) }));
+      const acima = !passado && linhas.some((l) => l.sit === 'acima');
+      const avisos = passado ? '' : linhas.map(({ t, sit }) => (sit === 'acima' ? `<p class="lot-txt acima">Acima do limite de ${t.nome.toLowerCase()}: agenda apertada</p>`
+        : sit === 'meta' ? `<p class="lot-txt meta">Meta de ${t.nome.toLowerCase()} batida ✓</p>` : '')).join('');
+      return `<details class="mes-ano ${acima ? 'acima' : ''} ${passado ? 'passado' : ''} ${m.mes === esteMes ? 'atual' : ''}">
         <summary>
-          <span class="mes-nome">${maiuscula(MESES[Number(m.mes.slice(5)) - 1])}${m.mes.slice(5) === '01' || m === meses[0] ? `<small>${m.mes.slice(0, 4)}</small>` : ''}</span>
-          <span class="barra-mes"><i style="width:${Math.min(100, (n / maior) * 100)}%"></i>${limite ? `<em style="left:${(limite / maior) * 100}%"></em>` : ''}</span>
-          <span class="mes-qtd"><b>${n}</b>${limite ? ` de ${limite}` : ''}${m.alugueis.length ? `<small class="alu-mes">${m.alugueis.length} ${m.alugueis.length > 1 ? 'aluguéis' : 'aluguel'} à parte</small>` : ''}</span>
+          <span class="mes-nome">${maiuscula(MESES[Number(m.mes.slice(5)) - 1])}${m.mes.slice(5) === '01' || m === meses[0] ? ` <small>${m.mes.slice(0, 4)}</small>` : ''}
+            ${acima ? '<span class="apertada-txt">Agenda apertada</span>' : ''}</span>
+          <span class="barras">${linhas.map((l) => barra(l.t, l.n, l.sit)).join('')}</span>
         </summary>
-        ${n || m.alugueis.length ? `<div class="mes-lista">
-          ${lot !== 'sem-limite' && !passado ? `<p class="lot-txt">${TXT[lot]}</p>` : ''}
+        <div class="mes-lista">
+          ${avisos}
           ${m.encomendas.map((e) => `<a href="#/encomenda/${e.id}"><b>${esc(nomeCliente(e.clienteId))}</b> · ${esc(e.peca)} <span>${e.status === 'entregue' ? 'entregue' : `entrega ${diaMes(etapa(e, 'entrega').data || e.evento)}`}</span></a>`).join('')}
           ${m.alugueis.map((a) => `<a href="#/locacao/${a.id}"><b>${esc(nomeCliente(a.clienteId))}</b> · aluguel: ${esc(nomePeca(a))} <span>evento ${diaMes(a.evento)}</span></a>`).join('')}
-        </div>` : '<p class="ajuda mes-lista">Nenhuma encomenda neste mês.</p>'}
+          ${!m.encomendas.length && !m.alugueis.length ? '<p class="ajuda">Nada marcado neste mês.</p>' : ''}
+        </div>
       </details>`;
     }).join('')}</div>`;
+}
+
+// Miniatura na lista: a primeira foto de referência (ou, sem ela, a de uma prova), para achar a encomenda de olho.
+function miniEncomenda(e) {
+  const id = e.fotos?.[0] || e.etapas.find((x) => x.fotos?.length)?.fotos[0];
+  return id ? `<span class="mini-lista"><img data-foto="${id}" alt=""></span>` : `<span class="mini-lista vazia">${ico('camera')}</span>`;
 }
 
 telas.encomendas = {
@@ -556,7 +583,7 @@ telas.encomendas = {
     return `
       ${cab('Encomendas', lista.length ? 'Toque numa encomenda para ver ou atualizar as etapas e os dados.' : '')}
       ${abasEnc()}
-      ${lista.length ? `<div class="lista">${lista.map((e) => `<a class="linha-lista" href="#/encomenda/${e.id}">
+      ${lista.length ? `<div class="lista">${lista.map((e) => `<a class="linha-lista com-foto" href="#/encomenda/${e.id}">${miniEncomenda(e)}
           <div><b>${esc(nomeCliente(e.clienteId))}</b><span>${esc(e.peca)}</span><span class="passo-txt">${proximoPasso(e)}</span></div>
           <div class="dir"><span>Evento</span><b>${diaMes(e.evento)}</b></div></a>`).join('')}</div>`
         : `<p class="vazio">${ui.filtroEnc === 'andamento' ? 'Nenhuma encomenda em andamento. Toque em <b>+ Novo</b> para registrar uma.' : ui.filtroEnc === 'cancelada' ? 'Nenhuma encomenda cancelada.' : 'Nada por aqui ainda.'}</p>`}
@@ -634,6 +661,40 @@ function editorEtapas(item) {
     </div>`;
 }
 
+// Planejamento da peça: tecidos, aviamentos e como fazer (para ela ou a ajudante).
+function listaPlano(e, lista, exemplo) {
+  const b = `encomendas#${e.id}.plano.${lista}`;
+  return `<div class="lista-plano">${e.plano[lista].map((a) => ui.editPlano === a.id ? `<div class="item-plano editando">
+      <div class="ed-linha">${campo(`${b}#${a.id}.nome`, a.nome, 'text', `placeholder="${exemplo}" aria-label="Nome" id="plano-${a.id}"`)}
+      ${campo(`${b}#${a.id}.qtd`, a.qtd, 'text', `class="qtd" placeholder="Qtd." aria-label="Quantidade" id="qtd-${a.id}"`)}</div>
+      <div class="ed-linha"><button class="ed-btn tirar" data-acao="tirarPlano" data-lista="${lista}" data-id="${a.id}">Tirar</button>
+      <button class="btn peq" data-acao="editarPlano" data-id="">Pronto</button></div>
+    </div>` : `<div class="item-plano ${a.ok ? 'feita' : ''}">
+      <button class="bola-btn" data-acao="marcarPlano" data-lista="${lista}" data-id="${a.id}" aria-pressed="${a.ok}" aria-label="${a.ok ? 'Já tem' : 'Marcar que já tem'}"><span class="bola">${a.ok ? '✓' : ''}</span></button>
+      <button class="texto-plano" data-acao="editarPlano" data-id="${a.id}" aria-label="Mudar ${esc(a.nome)}"><span>${esc(a.nome) || '<i>sem nome</i>'}</span>${a.qtd ? `<b>${esc(a.qtd)}</b>` : ''}</button>
+    </div>`).join('')}</div>`;
+}
+
+function cartaoPlano(e) {
+  e.plano = normalizarPlano(e.plano);
+  const p = e.plano;
+  const temAv = new Set(p.aviamentos.map((a) => a.nome.trim().toLowerCase()));
+  const sugestoes = AVIAMENTOS_COMUNS.filter((n) => ![...temAv].some((t) => t.startsWith(n.toLowerCase())));
+  return cartao(`<h2>Planejamento da peça</h2>
+    <p class="ajuda">Toque na bolinha do que já tem. Toque no nome para mudar.</p>
+    <h3 class="sub-plano">Tecidos</h3>
+    ${listaPlano(e, 'tecidos', 'Ex.: Zibeline (saia)')}
+    <button class="link mais-item" data-acao="novoPlano" data-lista="tecidos">+ Tecido</button>
+    <h3 class="sub-plano">Aviamentos</h3>
+    ${listaPlano(e, 'aviamentos', 'Ex.: Zíper invisível')}
+    ${sugestoes.length ? `<div class="chips">${sugestoes.map((n) => `<button class="chip" data-acao="novoPlano" data-lista="aviamentos" data-nome="${esc(n)}">+ ${esc(n)}</button>`).join('')}</div>` : ''}
+    <button class="link mais-item" data-acao="novoPlano" data-lista="aviamentos">+ Outro aviamento</button>
+    ${rotulo('Observações', area(`encomendas#${e.id}.obs`, e.obs, 'rows="4" placeholder="Ex.: pence dupla nas costas, barra feita à mão"'))}
+    <h3 class="sub-plano">Croqui da ficha</h3>
+    <div class="chips">${CROQUIS.map(([k, nome]) => `<button class="chip ${(e.croqui || 'adulta') === k ? 'on' : ''}" data-acao="escolherCroqui" data-v="${k}">${nome}</button>`).join('')}</div>
+    <a class="acao-etapa ficha-btn" href="#/fichaPeca/${e.id}">${ico('ficha')}Ficha da peça para imprimir</a>`);
+}
+
 function guiaEncomenda(e, c) {
   if (e.status !== 'andamento' || e.guiaOculto) return '';
   const prova = e.etapas.find((x) => infoEtapa(e, x).prova);
@@ -668,8 +729,8 @@ telas.encomenda = {
       ${cartao(ui.editEtapas === e.id ? editorEtapas(e) : `<div class="cartao-cab" id="etapas"><h2>Etapas</h2><button class="link" data-acao="editEtapas">Personalizar</button></div>
         <p class="ajuda">Toque numa etapa para marcar como feita. Para mudar a lista, toque em <b>Personalizar</b>. Etapa com data aparece na aba <b>Semana</b>.</p>
         ${e.etapas.map((x) => linhaEtapa(e, infoEtapa(e, x), 'encomendas')).join('')}`)}
-      ${cartao(`${rotulo('Observações gerais', area(`${b}.obs`, e.obs, 'placeholder="O que vale para a encomenda toda"'))}`)}
-      ${cartao(`<h2>Fotos de referência</h2><p class="ajuda">O modelo que a cliente trouxe, o croqui, o tecido.</p>${galeria(b, e.fotos)}`)}
+      ${cartaoPlano(e)}
+      ${cartao(`<h2>Fotos de referência</h2><p class="ajuda">O modelo que a cliente trouxe, o croqui, o tecido. A primeira aparece na lista de encomendas, para achar mais fácil.</p>${galeria(b, e.fotos)}`)}
       ${cartaoWhats(e, c)}
       ${cartao(`<h2>Dados da encomenda</h2>
         ${rotulo('Peça', campo(`${b}.peca`, e.peca))}
@@ -784,9 +845,9 @@ telas.cliente = {
       ${cartao(`<h2>Histórico</h2>
         ${encs.length || alus.length ? `<div class="lista">
           ${encs.map((e) => {
-            const notas = ['prova1', 'prova2'].map((k) => etapa(e, k)).filter((p) => p.notas?.trim());
+            const notas = e.etapas.filter((p) => infoEtapa(e, p).prova && p.notas?.trim());
             return `<a class="linha-lista" href="#/encomenda/${e.id}"><div><b>${esc(e.peca)}</b><span>Encomenda · evento ${dataBR(e.evento)}</span>
-              ${notas.map((p) => `<span class="nota-hist">${p.k === 'prova1' ? 'Prova 1' : 'Prova 2'}${p.feitaEm ? ` (${diaMes(p.feitaEm)})` : ''}: ${esc(p.notas)}</span>`).join('')}</div>
+              ${notas.map((p) => `<span class="nota-hist">${esc(infoEtapa(e, p).nome)}${p.feitaEm ? ` (${diaMes(p.feitaEm)})` : ''}: ${esc(p.notas)}</span>`).join('')}</div>
               <div class="dir"><span class="pill">${{ andamento: 'Em andamento', entregue: 'Entregue', cancelada: 'Cancelada' }[e.status]}</span></div></a>`;
           }).join('')}
           ${alus.map((a) => `<a class="linha-lista" href="#/locacao/${a.id}"><div><b>${esc(nomePeca(a))}</b><span>Aluguel · evento ${dataBR(a.evento)}</span></div>
@@ -840,7 +901,7 @@ telas.escolherMedidas = {
     const voltar = id ? `#/medidas/${id}` : '#/ajustes';
     const usadas = MEDIDAS.length - MEDIDAS.filter((k) => ocultas.has(k)).length;
     return `
-      ${cab('Suas medidas', `${usadas} de ${MEDIDAS.length} aparecem na medição`, voltar)}
+      ${cab('Suas medidas', `${usadas} de ${MEDIDAS.length} aparecem na medição e nas fichas`, voltar)}
       <p class="dica">Toque para tirar as que você não usa. Dá para trazer de volta quando quiser.</p>
       ${GRUPOS_MEDIDAS.map((g) => cartao(`<h2>${g.nome}</h2>${g.medidas.map((x) => {
         const usa = !ocultas.has(x.nome);
@@ -978,7 +1039,7 @@ let imagemAtual = null;
 telas.lembrete = {
   render(id, k) {
     const d = dadosLembrete(id, k);
-    if (!d) return `${cab('Lembrete', '', '#/semana')}<p class="vazio">Esse compromisso não tem data marcada. Marque a data na encomenda para mandar o lembrete.</p>`;
+    if (!d) return `${cab('Lembrete', '', '#/semana')}<p class="vazio">Esse compromisso não tem data marcada. Marque a data para mandar o lembrete.</p>`;
     const { item, cliente, conteudo: c } = d;
     const e = etapa(item, k);
     const voltar = item.tipo === 'aluguel' ? `#/locacao/${item.id}` : `#/encomenda/${item.id}`;
@@ -1011,7 +1072,7 @@ function dadosFicha(id) {
   const cliente = acharCliente(id);
   if (!cliente) return null;
   const encs = S().encomendas.filter((e) => e.clienteId === id && e.status === 'andamento').sort((a, b) => a.evento.localeCompare(b.evento));
-  return { cliente, conteudo: conteudoFicha({ cliente, atelie: S().atelie, encomenda: encs[0] }) };
+  return { cliente, conteudo: conteudoFicha({ cliente, atelie: S().atelie, encomenda: encs[0], ocultas: S().medidasOcultas }) };
 }
 
 telas.ficha = {
@@ -1036,6 +1097,44 @@ telas.ficha = {
     imagemAtual = { blob, nome: `medidas-${(d.cliente.nome || 'cliente').split(' ')[0].toLowerCase()}.png` };
     const img = document.getElementById('previa-ficha');
     if (img) img.src = URL.createObjectURL(blob);
+  },
+};
+
+// Ficha da peça: planejamento + etapas + medidas, para deixar junto com a peça.
+function dadosPeca(id) {
+  const e = S().encomendas.find((x) => x.id === id);
+  return e ? { e, conteudo: conteudoPeca({ encomenda: e, cliente: acharCliente(e.clienteId), atelie: S().atelie, ocultas: S().medidasOcultas }) } : null;
+}
+const carregarImagem = (url) => new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = url; });
+
+telas.fichaPeca = {
+  aba: 'encomendas',
+  render(id) {
+    const d = dadosPeca(id);
+    if (!d) return `${cab('Ficha da peça', '', '#/encomendas')}<p class="vazio">Essa encomenda não existe mais.</p>`;
+    return `
+      ${cab('Ficha da peça', esc(d.e.peca), `#/encomenda/${id}`)}
+      <p class="ajuda">São duas folhas para deixar juntas com a peça. O que estiver em branco sai com linha para escrever à mão.</p>
+      <h3>Folha 1 · Produção</h3>
+      <img id="previa-ficha" class="previa-img previa-ficha" alt="Folha de produção">
+      <h3>Folha 2 · Croqui e medidas</h3>
+      <img id="previa-ficha2" class="previa-img previa-ficha" alt="Folha do croqui e das medidas">
+      <div class="acoes coluna">
+        <button class="btn grande" data-acao="imprimirFicha">Imprimir as duas folhas</button>
+        <button class="btn sec" data-acao="mandarFicha">Salvar ou mandar as imagens</button>
+      </div>`;
+  },
+  async depois(id) {
+    const d = dadosPeca(id);
+    if (!d) return;
+    const croqui = await carregarImagem(`croquis/croqui-${d.conteudo.croqui}.png`);
+    const [b1, b2] = await imagensPeca(d.conteudo, { croqui });
+    const nome = (d.conteudo.nome || 'cliente').split(' ')[0].toLowerCase();
+    imagemAtual = { arquivos: [{ blob: b1, nome: `${nome}-producao.png` }, { blob: b2, nome: `${nome}-croqui-medidas.png` }] };
+    const i1 = document.getElementById('previa-ficha');
+    const i2 = document.getElementById('previa-ficha2');
+    if (i1) i1.src = URL.createObjectURL(b1);
+    if (i2) i2.src = URL.createObjectURL(b2);
   },
 };
 
@@ -1092,9 +1191,7 @@ telas.comecar = {
     if (passo === 4) {
       return `${cabComecar(4, 'O que a cliente precisa saber?', 'Estas orientações vão no lembrete antes de cada prova ou aluguel. Já deixamos algumas sugestões: mude, tire ou acrescente.')}
         ${cartao(editorOrientacoes())}
-        ${cartao(`<label class="limite"><span>Limite de sob medida por mês <small>(opcional)</small></span>
-          <input type="number" inputmode="numeric" min="0" data-bind="capacidadeMes" value="${S().capacidadeMes || ''}" placeholder="Ex.: 6"></label>
-          <p class="ajuda">Ajuda a não aceitar mais encomendas do que dá conta. Aluguel não consome o limite.</p>`)}
+        ${cartao(`<h2>Metas do mês <small>(opcional)</small></h2>${camposMetas()}<p class="ajuda">Dá para mudar depois em Encomendas › 12 meses.</p>`)}
         <button class="btn grande" data-acao="comecarProximo">Concluir</button>`;
     }
     // Fim: resumo
@@ -1104,7 +1201,7 @@ telas.comecar = {
       ${cartao(`<dl class="resumo">
         ${linha('Ateliê', a.nome)}${linha('WhatsApp', a.whatsapp)}${linha('Endereço', a.endereco)}
         ${linha('Orientações', `${a.orientacoes.provas.filter((x) => x.trim()).length + a.orientacoes.aluguel.filter((x) => x.trim()).length}`)}
-        ${linha('Limite por mês', S().capacidadeMes ? `${S().capacidadeMes} sob medida` : '')}
+        ${CAMPOS_METAS.map(([nome, meta, limite]) => linha(nome, [numMeta(meta) && `meta ${numMeta(meta)}`, numMeta(limite) && `limite ${numMeta(limite)}`].filter(Boolean).join(', '))).join('')}
       </dl>`)}
       <h2 class="secao">E agora?</h2>
       <div class="acoes coluna">
@@ -1123,7 +1220,7 @@ telas.ajustes = {
     const s = S();
     return `
       ${cab('Ajustes', '', '#/semana')}
-      ${cartao(`<h2>Seu ateliê</h2><p class="ajuda">Aparece nos lembretes que você manda para a cliente.</p>
+      ${cartao(`<h2>Seu ateliê</h2><p class="ajuda">Aparece nos lembretes para a cliente e nas fichas para imprimir.</p>
         ${rotulo('Nome do ateliê', campo('atelie.nome', s.atelie.nome, 'text', 'placeholder="Ex.: Ateliê Ingrid Castro"'))}
         ${rotulo('Endereço', campo('atelie.endereco', s.atelie.endereco, 'text', 'placeholder="Ex.: Rua das Flores, 120, sala 3"'), 'Para a cliente saber onde é a prova.')}
         ${rotulo('WhatsApp do ateliê', campo('atelie.whatsapp', s.atelie.whatsapp, 'tel', 'inputmode="tel" placeholder="(11) 98765-4321"'))}`, '', 'id="seu-atelie"')}
@@ -1131,7 +1228,7 @@ telas.ajustes = {
         <p class="ajuda">Vão no lembrete antes de cada compromisso. Mude o texto, tire ou acrescente.</p>
         ${editorOrientacoes()}`)}
       ${cartao(`<h2>Medidas</h2>
-        <p class="ajuda">As 38 medidas do guia aparecem na medição. Tire as que você não usa.</p>
+        <p class="ajuda">As medidas do guia que aparecem na medição e nas fichas para imprimir. Tire as que você não usa.</p>
         <a class="btn sec" href="#/escolherMedidas">Escolher medidas (${MEDIDAS.length - S().medidasOcultas.filter((k) => MEDIDAS.includes(k)).length} de ${MEDIDAS.length})</a>`)}
       ${cartao(`<h2>Mensagens prontas</h2>
         <p class="ajuda">Os textos que o app monta para mandar no WhatsApp. Mude do seu jeito. As palavras entre chaves são trocadas sozinhas: <b>{nome}</b> vira o nome da cliente, <b>{quando}</b> o dia e a hora, <b>{peca}</b> a peça.</p>
@@ -1167,7 +1264,7 @@ telas.ajustes = {
       ${cartao(`<h2>Guardar na tela do celular</h2>
         <p><b>iPhone:</b> no Safari, toque em Compartilhar e depois em Adicionar à Tela de Início.</p>
         <p><b>Android:</b> no Chrome, toque no menu (⋮) e depois em Instalar app.</p>`)}
-      ${cartao(`<h2>Apagar tudo</h2><p class="ajuda">Apaga clientes, encomendas, peças e aluguéis deste aparelho. Faça um backup antes.</p>
+      ${cartao(`<h2>Apagar tudo</h2><p class="ajuda">Apaga clientes, encomendas, peças, aluguéis e fotos deste aparelho. Faça um backup antes.</p>
         <div class="acoes"><button class="btn perigo" data-acao="apagarTudo">Apagar todos os dados</button></div>`)}
     `;
   },
@@ -1334,18 +1431,30 @@ const acoes = {
   },
   async mandarFicha() {
     if (!imagemAtual) return;
-    const arq = new File([imagemAtual.blob], imagemAtual.nome, { type: 'image/png' });
-    if (navigator.canShare?.({ files: [arq] })) {
-      try { await navigator.share({ files: [arq] }); } catch (e) { if (e.name !== 'AbortError') toast('Não foi possível compartilhar.'); }
+    const lista = imagemAtual.arquivos || [imagemAtual];
+    const arqs = lista.map((a) => new File([a.blob], a.nome, { type: 'image/png' }));
+    if (navigator.canShare?.({ files: arqs })) {
+      try { await navigator.share({ files: arqs }); } catch (e) { if (e.name !== 'AbortError') toast('Não foi possível compartilhar.'); }
     } else {
-      store.baixar(imagemAtual.blob, imagemAtual.nome);
-      toast('Imagem baixada');
+      lista.forEach((a) => store.baixar(a.blob, a.nome));
+      toast(lista.length > 1 ? 'Imagens baixadas' : 'Imagem baixada');
     }
   },
   imprimirFicha() {
-    if (!document.getElementById('previa-ficha')?.src) return;
-    window.print(); // a folha de impressão mostra só a ficha (veja @media print no CSS)
+    const folhas = [...document.querySelectorAll('.previa-ficha')].filter((i) => i.src);
+    if (!folhas.length) return;
+    // Uma folha A4 por imagem (veja @media print no CSS).
+    document.getElementById('impressao')?.remove();
+    const caixa = document.createElement('div');
+    caixa.id = 'impressao';
+    folhas.forEach((i) => { const im = document.createElement('img'); im.src = i.src; im.alt = ''; caixa.appendChild(im); });
+    document.body.appendChild(caixa);
+    document.body.classList.add('imprimindo');
+    const fim = () => { document.body.classList.remove('imprimindo'); caixa.remove(); window.removeEventListener('afterprint', fim); };
+    window.addEventListener('afterprint', fim);
+    setTimeout(() => window.print(), 50);
   },
+  escolherCroqui(el) { const e = itemDaRota(); e.croqui = el.dataset.v; tocar(e); store.salvar(); const y = window.scrollY; render(); window.scrollTo(0, y); },
   async copiarLembrete() {
     if (!imagemAtual) return;
     try { await navigator.clipboard.writeText(imagemAtual.texto); toast('Texto copiado. É só colar no WhatsApp.'); acoes.marcarLembrete(); }
@@ -1414,6 +1523,44 @@ const acoes = {
     adicionarEtapa(item, nome, ui.novaEtapaProva);
     ui.novaEtapa = ''; ui.novaEtapaProva = false; tocar(item); store.salvar(); render();
     document.getElementById('nova-etapa')?.focus();
+  },
+  novoPlano(el) {
+    const e = itemDaRota();
+    e.plano = normalizarPlano(e.plano);
+    const item = { id: uid(), nome: el.dataset.nome || '', qtd: '', ok: false };
+    e.plano[el.dataset.lista].push(item);
+    ui.editPlano = item.id;
+    tocar(e); store.salvar();
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+    // Do botão pronto, vai para a quantidade; do "+ Tecido" ou "+ Outro", para o nome.
+    document.getElementById(`${item.nome ? 'qtd' : 'plano'}-${item.id}`)?.focus({ preventScroll: true });
+  },
+  editarPlano(el) {
+    const e = itemDaRota();
+    // Ao fechar, some o item que ficou sem nome.
+    for (const l of ['tecidos', 'aviamentos']) e.plano[l] = e.plano[l].filter((x) => x.nome.trim() || x.id === el.dataset.id);
+    ui.editPlano = el.dataset.id || null;
+    store.salvar();
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+    document.getElementById(`plano-${ui.editPlano}`)?.focus({ preventScroll: true });
+  },
+  marcarPlano(el) {
+    const e = itemDaRota();
+    const a = e.plano?.[el.dataset.lista]?.find((x) => x.id === el.dataset.id);
+    if (!a) return;
+    a.ok = !a.ok; tocar(e); store.salvar();
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+  },
+  tirarPlano(el) {
+    const e = itemDaRota();
+    const lista = el.dataset.lista;
+    const a = e.plano?.[lista]?.find((x) => x.id === el.dataset.id);
+    if (!a) return;
+    const antes = [...e.plano[lista]];
+    e.plano[lista] = antes.filter((x) => x !== a);
+    ui.editPlano = null; tocar(e); store.salvar();
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+    if (a.nome.trim()) toast(`${a.nome.trim()} saiu da lista`, () => { e.plano[lista] = antes; tocar(e); store.salvar(); render(); });
   },
   provaNova() { ui.novaEtapaProva = !ui.novaEtapaProva; render(); },
   salvarModelo() {
@@ -1565,7 +1712,7 @@ document.addEventListener('change', (ev) => {
     S().prazosAluguel[k] = prazoValido(k, el.value === '' ? PRAZOS_PADRAO[k] : el.value);
     store.salvar(); toast('Prazo salvo'); const y = window.scrollY; render(); window.scrollTo(0, y); return;
   }
-  if (el.dataset?.bind === 'capacidadeMes') { setPath('capacidadeMes', Math.max(0, Math.round(Number(el.value) || 0))); render(); return; }
+  if (['metaSobMedida', 'capacidadeMes', 'metaAluguel', 'limiteAluguel'].includes(el.dataset?.bind)) { setPath(el.dataset.bind, Math.max(0, Math.round(Number(el.value) || 0))); render(); return; }
   if (el.dataset?.acao === 'addFoto' && el.files.length) {
     const alvo = el.dataset.alvo;
     const arquivos = [...el.files];
@@ -1614,6 +1761,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.target.id === 'nova-peca') { ev.preventDefault(); acoes.addPeca(); return; }
   if (ev.target.dataset.bind === 'ui.medicao.extra') { ev.preventDefault(); acoes.medidaExtra(); return; }
   if (ev.target.id === 'nova-etapa') { ev.preventDefault(); acoes.addEtapa(); return; }
+  if (ev.target.id?.startsWith('qtd-')) { ev.preventDefault(); acoes.editarPlano({ dataset: { id: '' } }); return; }
   if (ev.target.dataset.bind === 'ui.novaCliente.whatsapp') { ev.preventDefault(); acoes.salvarCliente(); return; }
   if (ev.target.id === 'nome-modelo') { ev.preventDefault(); acoes.salvarModelo(); return; }
   const campos = [...$main.querySelectorAll('input:not([type=hidden]), textarea')];

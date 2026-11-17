@@ -71,7 +71,9 @@ function inicial() {
     medidasOcultas: [], // medidas do guia que ela não usa
     prazosAluguel: { ...PRAZOS_PADRAO }, // retirada, devolução, higienização e folga, em dias
     mensagens: { prova: '', pronta: '', final: '' }, // textos prontos mudados por ela (vazio = original)
-    capacidadeMes: 0, // quantas encomendas ela dá conta por mês (0 = não definido)
+    // Por mês (0 = não definido). Meta = o que ela quer alcançar; limite = o máximo que dá conta.
+    // capacidadeMes é o limite de sob medida (nome antigo, mantido para não perder o que ela já tinha).
+    metaSobMedida: 0, capacidadeMes: 0, metaAluguel: 0, limiteAluguel: 0,
     modelos: [],      // listas de etapas salvas por ela (ex.: Noiva)
     ultimoModelo: '', // o modelo escolhido na última encomenda
     clientes: [],

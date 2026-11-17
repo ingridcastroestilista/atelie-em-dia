@@ -56,8 +56,9 @@ export function conteudoLembrete({ item, k, cliente, peca, atelie, mensagens }, 
   const nome = primeiroNome(cliente?.nome);
   const pecaTxt = peca ? peca.toLowerCase() : '';
   const frase = {
-    prova: `sua prova${pecaTxt ? ` do ${pecaTxt}` : ''} está marcada.`,
-    medidas: `vamos tirar suas medidas${pecaTxt ? ` para o ${pecaTxt}` : ''}.`,
+    // A peça vai entre parênteses: "do"/"da" erraria em "saia", "blusa"…
+    prova: `sua prova${pecaTxt ? ` (${pecaTxt})` : ''} está marcada.`,
+    medidas: `vamos tirar suas medidas${pecaTxt ? ` (${pecaTxt})` : ''}.`,
     entrega: `sua encomenda${pecaTxt ? ` (${pecaTxt})` : ''} fica pronta para buscar.`,
     retirada: `a retirada do vestido${peca ? ` ${peca}` : ''} está marcada.`,
     devolucao: `a devolução do vestido${peca ? ` ${peca}` : ''} está marcada.`,
