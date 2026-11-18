@@ -175,6 +175,7 @@ function rota() {
 }
 
 let ultimoRender = 0;
+let abrirEditorDepois = null; // id da encomenda: abrir 'Personalizar etapas' ao chegar nela
 let redesenhoPendente = false; // data ou hora mudou e a tela ainda não foi atualizada
 
 // "retirada 2 dias antes" / "devolução no dia do evento"
@@ -409,16 +410,45 @@ function avisosApertados(lista) {
   }).join('');
 }
 
-function avisoConflito(n) {
-  if (!n.pecaId || !n.evento) return '';
+// Aluguel novo: a peça escolhida no chip ou a do acervo com o mesmo nome digitado.
+const normal = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+function pecaDoNovo(n) {
+  if (n.pecaId) return n.pecaId;
+  const nome = normal(n.peca);
+  return nome ? (S().pecas.find((p) => normal(p.nome) === nome)?.id || '') : '';
+}
+function datasNovo(n) {
   const ini = n.retirada || somaDias(n.evento, -prazos.retirada);
   const dev = n.devolucao || somaDias(n.evento, prazos.devolucao);
-  const fim = somaDias(dev, prazos.higienizacao);
-  const cs = conflitos(S().alugueis, n.pecaId, ini, fim);
-  const ap = apertados(S().alugueis, n.pecaId, ini, fim);
-  if (!cs.length && ap.length) return avisosApertados(ap);
-  if (!cs.length) return '<p class="alerta ok">A peça está livre nessas datas.</p>';
-  return cs.map((a) => { const p = periodo(a); return `<p class="alerta perigo">Esta peça está com <b>${esc(nomeCliente(a.clienteId))}</b> de ${diaMes(p.ini)} a ${diaMes(p.fim)} (com higienização). Escolha outra data ou outra peça.</p>`; }).join('');
+  return { ini, fim: somaDias(dev, prazos.higienizacao) };
+}
+function conflitosNovo(n) {
+  const pecaId = pecaDoNovo(n);
+  if (!pecaId || !n.evento) return [];
+  const { ini, fim } = datasNovo(n);
+  return conflitos(S().alugueis, pecaId, ini, fim);
+}
+const textoReservada = (a) => { const p = periodo(a); return `Reservada para <b>${esc(nomeCliente(a.clienteId))}</b> de ${diaMes(p.ini)} a ${diaMes(p.fim)} (com higienização).`; };
+
+function avisoConflito(n) {
+  const pecaId = pecaDoNovo(n);
+  if (!pecaId || !n.evento) return '';
+  const { ini, fim } = datasNovo(n);
+  const cs = conflitosNovo(n);
+  if (cs.length) {
+    return `<div class="alerta perigo reservada" role="alert"><b class="reservada-tit">Peça já reservada nessas datas</b>
+      ${cs.map((a) => `<span>${textoReservada(a)}</span>`).join('')}
+      <span>Escolha outra data ou outra peça.</span></div>`;
+  }
+  const ap = apertados(S().alugueis, pecaId, ini, fim);
+  return ap.length ? avisosApertados(ap) : '<p class="alerta ok">A peça está livre nessas datas.</p>';
+}
+
+// Não deixa seguir: mostra o aviso vermelho e leva a tela até ele.
+function avisarReservada() {
+  render();
+  toast('Esta peça já está reservada nessas datas.');
+  requestAnimationFrame(() => document.querySelector('.reservada')?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
 }
 
 telas.novo = {
@@ -467,7 +497,8 @@ telas.novo = {
               ${rotulo('Devolução', campo('ui.novo.devolucao', n.devolucao || somaDias(n.evento, prazos.devolucao), 'date'))}
             </div>
             <p class="ajuda">Sugestão: ${txtPrazo(prazos.retirada, 'antes')} e ${txtPrazo(prazos.devolucao, 'depois', 'devolução')}. Pode mudar. <a href="#/ajustes">Mudar a sugestão</a></p>
-            ${avisoConflito(n)}` : ''}
+` : ''}
+          ${tipo === 'aluguel' ? `<div id="aviso-datas">${avisoConflito(n)}</div>` : ''}
         `)}
         <button class="btn grande" data-acao="proximoPasso">Continuar</button>`;
     }
@@ -788,8 +819,8 @@ telas.encomenda = {
       ${cartao(`<h2>Fotos de referência</h2><p class="ajuda">O modelo que a cliente trouxe, o croqui, o tecido. A primeira aparece na lista de encomendas, para achar mais fácil.</p>${galeria(b, e.fotos)}`)}
       ${cartaoWhats(e, c)}
       ${guiaEncomenda(e, c)}
-      ${cartaoPlano(e)}
       ${cartao(ui.editEtapas === e.id ? editorEtapas(e) : cartaoEtapas(e))}
+      ${cartaoPlano(e)}
       ${cartao(`<h2>Dados da encomenda</h2>
         ${rotulo('Peça', campo(`${b}.peca`, e.peca))}
         ${rotulo('Data do evento', campo(`${b}.evento`, e.evento, 'date'))}`)}
@@ -1172,7 +1203,8 @@ telas.fichaPeca = {
     if (!d) return `${cab('Ficha da peça', '', '#/encomendas')}<p class="vazio">Essa encomenda não existe mais.</p>`;
     return `
       ${cab('Ficha da peça', esc(d.e.peca), `#/encomenda/${id}`)}
-      <p class="ajuda">São duas folhas para deixar juntas com a peça. O que estiver em branco sai com linha para escrever à mão.</p>
+      <p class="ajuda">São duas folhas para deixar juntas com a peça. O que estiver em branco sai com linha para escrever à mão.
+        As etapas saem como estão na encomenda. <button class="link" data-acao="etapasDaFicha">Mudar as etapas</button></p>
       <h3>Folha 1 · Produção</h3>
       <img id="previa-ficha" class="previa-img previa-ficha" alt="Folha de produção">
       <h3>Folha 2 · Croqui e medidas</h3>
@@ -1467,6 +1499,7 @@ const acoes = {
     if (n.tipo === 'encomenda' && !n.peca.trim()) return toast('Escreva qual é a peça.');
     if (n.tipo === 'aluguel' && !n.pecaId && !n.peca.trim()) return toast('Escolha a peça do acervo ou escreva o nome de uma nova.');
     if (!n.evento) return toast('Escolha a data do evento.');
+    if (n.tipo === 'aluguel' && conflitosNovo(n).length) { n.passo = 2; return avisarReservada(); }
     const clienteNova = !clientePorNome(nome);
     const cliente = clientePorNome(nome) || novaCliente(nome);
     if (n.whatsapp.trim() && !cliente.whatsapp) { cliente.whatsapp = n.whatsapp.trim(); tocar(cliente); }
@@ -1481,7 +1514,7 @@ const acoes = {
       s.encomendas.push(e);
       ui.novo = null; ui.cadastrado = { id: e.id, clienteNova }; store.salvar(); ir(`#/cadastrado/${e.id}`);
     } else {
-      let pecaId = n.pecaId;
+      let pecaId = pecaDoNovo(n);
       if (!pecaId) { const p = { id: uid(), nome: n.peca.trim(), tamanho: '', cor: '', obs: '', criadoEm: agora(), alteradoEm: agora() }; s.pecas.push(p); pecaId = p.id; }
       const etapas = etapasAluguel(n.evento);
       if (n.retirada) etapas.find((e) => e.k === 'retirada').data = n.retirada;
@@ -1499,6 +1532,7 @@ const acoes = {
       if (n.tipo === 'encomenda' && !n.peca.trim()) return toast('Escreva qual é a peça.');
       if (n.tipo === 'aluguel' && !n.pecaId && !n.peca.trim()) return toast('Escolha o vestido ou escreva o nome de um novo.');
       if (!n.evento) return toast('Escolha a data do evento.');
+      if (n.tipo === 'aluguel' && conflitosNovo(n).length) return avisarReservada();
     }
     n.passo += 1; render(); window.scrollTo(0, 0);
   },
@@ -1595,6 +1629,8 @@ const acoes = {
   },
   focarEtapas() { const item = itemDaRota(); if (item?.tipo === 'encomenda') { ui.todasEtapas = item.id; render(); } document.getElementById('etapas')?.scrollIntoView({ block: 'start' }); },
   focarWhats() { ui.focoWhats = true; if (rota().nome === 'cliente') { render(); } },
+  // Da ficha: volta para a encomenda já com as etapas abertas para personalizar.
+  etapasDaFicha() { abrirEditorDepois = rota().id; ir(`#/encomenda/${rota().id}`); },
   editEtapas() { const item = itemDaRota(); ui.editEtapas = ui.editEtapas === item.id ? null : item.id; ui.novaEtapa = ''; ui.nomeModelo = ''; render(); },
   moverEtapa(el) { const item = itemDaRota(); if (moverEtapa(item, el.dataset.k, Number(el.dataset.d))) { tocar(item); store.salvar(); render(); } },
   removerEtapa(el) {
@@ -1788,11 +1824,43 @@ document.addEventListener('focusout', () => {
   }, 350);
 });
 
+// Num aluguel já cadastrado: não deixa mudar o evento, a retirada ou a devolução para dias em que
+// a peça já está com outra cliente. Volta a data antiga e avisa.
+function podeMudarDataAluguel(el) {
+  const m = el.dataset.bind.match(/^alugueis#([^.]+)\.(evento|etapas#(retirada|devolucao)\.data)$/);
+  if (!m || !el.value) return true;
+  const a = S().alugueis.find((x) => x.id === m[1]);
+  if (!a || a.status === 'cancelado') return true;
+  const r = resolver(el.dataset.bind);
+  const antes = r.alvo[r.chave];
+  r.alvo[r.chave] = el.value;
+  // Mudou o evento: a peça vai precisar estar com ela em volta da data nova.
+  const p = m[2] === 'evento'
+    ? { ini: somaDias(el.value, -prazos.retirada), fim: somaDias(el.value, prazos.devolucao + prazos.higienizacao) }
+    : periodo(a);
+  const cs = conflitos(S().alugueis, a.pecaId, p.ini, p.fim, a.id);
+  r.alvo[r.chave] = antes;
+  if (!cs.length) return true;
+  el.value = antes || '';
+  const q = periodo(cs[0]);
+  setTimeout(() => alert(`Peça já reservada nessa data.\n\nEla está com ${nomeCliente(cs[0].clienteId)} de ${diaMes(q.ini)} a ${diaMes(q.fim)} (com higienização). A data não foi mudada.`), 50);
+  return false;
+}
+
 document.addEventListener('change', (ev) => {
   const el = ev.target;
   // Data e hora: só guarda. Redesenhar agora fecharia o calendário do celular no meio da escolha
   // (o iPhone já preenche a data de hoje ao abrir). A tela atualiza quando ela sai do campo.
-  if (el.dataset?.bind && ['date', 'time'].includes(el.type)) { setPath(el.dataset.bind, el.value); redesenhoPendente = true; return; }
+  if (el.dataset?.bind && ['date', 'time'].includes(el.type)) {
+    if (el.type === 'date' && !podeMudarDataAluguel(el)) return;
+    setPath(el.dataset.bind, el.value); redesenhoPendente = true;
+    // Aluguel novo: o aviso de peça reservada aparece na hora, sem esperar ela sair do campo.
+    if (/^ui\.novo\.(evento|retirada|devolucao)$/.test(el.dataset.bind) && ui.novo?.tipo === 'aluguel') {
+      const caixa = document.getElementById('aviso-datas');
+      if (caixa) caixa.innerHTML = avisoConflito(ui.novo);
+    }
+    return;
+  }
   if (el.dataset?.bind && el.type === 'tel') { el.value = formatarTelefone(el.value); setPath(el.dataset.bind, el.value); return; }
   if (el.dataset?.bind?.startsWith('prazosAluguel.')) {
     const k = el.dataset.bind.split('.')[1];
@@ -1860,8 +1928,14 @@ document.addEventListener('keydown', (ev) => {
 
 window.addEventListener('hashchange', () => {
   ui.notas = null; ui.editEtapas = null; ui.foto = null;
+  if (abrirEditorDepois && rota().id === abrirEditorDepois) ui.editEtapas = abrirEditorDepois;
+  const rolarEtapas = !!abrirEditorDepois; abrirEditorDepois = null;
   if (rota().nome !== 'semana') ui.comecar = 0; // saiu do primeiro acesso
   render(); window.scrollTo(0, 0);
+  if (rolarEtapas) {
+    const c = document.querySelector('[data-acao="editEtapas"]')?.closest('.cartao');
+    if (c) window.scrollTo(0, c.getBoundingClientRect().top + window.scrollY - 80); // abaixo da barra de cima
+  }
 });
 window.addEventListener('pagehide', store.gravar);
 document.addEventListener('visibilitychange', () => { if (document.hidden) store.gravar(); });

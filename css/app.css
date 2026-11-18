@@ -465,3 +465,7 @@ button.voltar { background: none; border: 0; cursor: pointer; font-family: inher
 .abre-cartao .seta { flex: none; width: 26px; height: 26px; fill: none; stroke: var(--marsala); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; transition: transform .2s; }
 .abre-cartao .seta.aberta { transform: rotate(90deg); }
 .cartao:not(.cartao-fechado) > .abre-cartao { margin-bottom: 8px; }
+
+/* Aluguel novo: peça já reservada nas datas escolhidas */
+.alerta.reservada { display: grid; gap: 6px; border: 2px solid #C9473D; font-size: 16px; }
+.reservada-tit { font-size: 17px; }
