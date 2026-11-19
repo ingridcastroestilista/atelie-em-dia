@@ -196,6 +196,7 @@ function render() {
   if (nome === 'semana' && (!S().inicioFeito || ui.comecar > PASSOS_ATELIE)) nome = 'comecar';
   if (ui.recem && ui.recem.id !== id) ui.recem = null;
   if (ui.compras && ui.compras.id !== id) ui.compras = null;
+  if (ui.provasAberto && ui.provasAberto !== id) ui.provasAberto = null;
   if (ui.planoAberto && ui.planoAberto !== id) ui.planoAberto = null; // saiu da encomenda: o planejamento volta fechado
   if (ui.todasEtapas && ui.todasEtapas !== id) ui.todasEtapas = null; // e as etapas também
   telaAtual = telas[nome];
@@ -673,9 +674,9 @@ function linhaEtapa(item, def, raiz) {
         ${e.data ? `<div class="acoes-etapa"><button class="acao-etapa ${naAgenda ? 'ok' : ''}" data-acao="agenda" data-k="${def.k}">${naAgenda ? `${ico('ok')}Na agenda` : `${ico('agenda')}${e.agendaEm ? 'Data mudou: pôr de novo' : 'Pôr na agenda'}`}</button>` : ''}
         ${e.data && !e.feitaEm && tipoLembrete(item, def.k) ? `<a class="acao-etapa ${e.lembreteEm ? 'ok' : ''}" href="#/lembrete/${item.id}/${def.k}">${e.lembreteEm ? `${ico('ok')}Lembrada em ${diaMes(e.lembreteEm)}` : `${ico('conversa')}Lembrar a cliente`}</a>` : ''}${e.data ? '</div>' : ''}
       </div>` : ''}
-    ${def.prova && (e.feitaEm || e.notas || e.fotos?.length) ? `<div class="notas-prova">${rotulo('O que ficou decidido', area(`${b}.notas`, e.notas, 'placeholder="Ex.: subir a barra 2 cm"'))}
+    ${raiz !== 'encomendas' && def.prova && (e.feitaEm || e.notas || e.fotos?.length) ? `<div class="notas-prova">${rotulo('O que ficou decidido', area(`${b}.notas`, e.notas, 'placeholder="Ex.: subir a barra 2 cm"'))}
       ${galeria(`${raiz}#${item.id}.etapas#${def.k}`, e.fotos, { aviso: AVISO_FOTO_CLIENTE })}</div>` : ''}
-    ${anterior && !e.feitaEm ? `<div class="nota-anterior"><b>Da ${infoEtapa(item, anterior).nome}${anterior.feitaEm ? ` (${diaMes(anterior.feitaEm)})` : ''}:</b> ${esc(anterior.notas || '')}
+    ${raiz !== 'encomendas' && anterior && !e.feitaEm ? `<div class="nota-anterior"><b>Da ${infoEtapa(item, anterior).nome}${anterior.feitaEm ? ` (${diaMes(anterior.feitaEm)})` : ''}:</b> ${esc(anterior.notas || '')}
       ${galeria(`${raiz}#${item.id}.etapas#${anterior.k}`, anterior.fotos, { soVer: true })}</div>` : ''}
   </div>`;
 }
@@ -790,6 +791,30 @@ function guiaEncomenda(e, c) {
 
 // Etapas da encomenda: fechado, mostra só a próxima por fazer (a feita sai e entra a seguinte).
 // Um toque no título abre a lista inteira, para desfazer, ver as anotações ou personalizar.
+// Provas: as anotações e fotos de todas as provas no mesmo lugar, na ordem.
+function cartaoProvas(e) {
+  const provas = e.etapas.filter((x) => infoEtapa(e, x).prova);
+  if (!provas.length) return '';
+  const aberto = ui.provasAberto === e.id;
+  const feitas = provas.filter((x) => x.feitaEm).length;
+  const fotos = provas.reduce((t, x) => t + (x.fotos?.length || 0), 0);
+  const resumo = [`${feitas} de ${provas.length} feita${feitas === 1 ? '' : 's'}`, fotos ? `${fotos} foto${fotos > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
+  const cabecalho = `<button class="abre-cartao" data-acao="abrirProvas" aria-expanded="${aberto}">
+      <span><h2>Provas</h2><small>${resumo}</small></span>${setaCartao(aberto)}</button>`;
+  if (!aberto) return cartao(cabecalho, 'cartao-fechado', 'id="provas"');
+  const b = (x) => `encomendas#${e.id}.etapas#${x.k}`;
+  const quando = (x) => (x.feitaEm ? `<small class="ok-txt">feita em ${diaMes(x.feitaEm)}</small>`
+    : x.data ? `<small>marcada para ${diaMes(x.data)}${horaTxt(x.hora)}</small>` : '<small>sem data</small>');
+  return cartao(`${cabecalho}
+    <p class="ajuda">O que ficou decidido em cada prova, com as fotos. Tudo junto, na ordem.</p>
+    <p class="aviso-foto">${AVISO_FOTO_CLIENTE}</p>
+    ${provas.map((x) => `<div class="prova-bloco">
+      <div class="prova-tit"><b>${esc(infoEtapa(e, x).nome)}</b>${quando(x)}</div>
+      ${area(`${b(x)}.notas`, x.notas, 'placeholder="Ex.: subir a barra 2 cm, apertar 1 cm na cintura"')}
+      ${galeria(b(x), x.fotos)}
+    </div>`).join('')}`, '', 'id="provas"');
+}
+
 const setaCartao = (aberto) => `<svg class="seta ${aberto ? 'aberta' : ''}" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
 function cartaoEtapas(e) {
   const pend = e.etapas.filter((x) => !x.feitaEm);
@@ -821,6 +846,7 @@ telas.encomenda = {
       ${guiaEncomenda(e, c)}
       ${cartao(ui.editEtapas === e.id ? editorEtapas(e) : cartaoEtapas(e))}
       ${cartaoPlano(e)}
+      ${cartaoProvas(e)}
       ${cartao(`<h2>Dados da encomenda</h2>
         ${rotulo('Peça', campo(`${b}.peca`, e.peca))}
         ${rotulo('Data do evento', campo(`${b}.evento`, e.evento, 'date'))}`)}
@@ -1456,6 +1482,11 @@ const acoes = {
     const k = el.dataset.k;
     if (etapa(item, k).feitaEm) { marcarEtapa(item, k, false); tocar(item); store.salvar(); render(); return; }
     concluirEtapa(item, k); // prova: abre a folha "O que ficou decidido?"
+  },
+  abrirProvas() {
+    const e = itemDaRota();
+    ui.provasAberto = ui.provasAberto === e.id ? null : e.id;
+    const y = window.scrollY; render(); window.scrollTo(0, y);
   },
   abrirPlano() {
     const e = itemDaRota();

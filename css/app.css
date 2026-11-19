@@ -469,3 +469,11 @@ button.voltar { background: none; border: 0; cursor: pointer; font-family: inher
 /* Aluguel novo: peça já reservada nas datas escolhidas */
 .alerta.reservada { display: grid; gap: 6px; border: 2px solid #C9473D; font-size: 16px; }
 .reservada-tit { font-size: 17px; }
+
+/* Encomenda: cartão Provas (anotações e fotos de todas as provas) */
+.prova-bloco { padding: 12px 0; border-top: 1px solid var(--line); }
+.prova-bloco:first-of-type { border-top: 0; }
+.prova-tit { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.prova-tit b { font-size: 17px; }
+.prova-tit small { color: var(--ink-3, #8A817C); font-size: 14px; }
+.prova-bloco textarea { width: 100%; }
