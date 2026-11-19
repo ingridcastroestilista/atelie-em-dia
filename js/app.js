@@ -1,6 +1,7 @@
 import * as store from './store.js';
 import { protegerApp } from './acesso.js';
 import { conteudoFicha, imagemFicha, conteudoPeca, imagensPeca, normalizarPlano, AVIAMENTOS_COMUNS, CROQUIS } from './ficha.js';
+import { opcoesFiltro, filtrarPecas, valorTxt, subtitulo, paginasCatalogo, pdfDePaginas } from './catalogo.js';
 import { guardarFoto, enderecoFoto, apagarFoto, limparSoltas } from './fotos.js';
 import { tipoLembrete, conteudoLembrete, textoLembrete, imagemLembrete, ORIENTACOES_PADRAO } from './lembrete.js';
 import { uid, agora, tocar, MEDIDAS, GRUPOS_MEDIDAS, acharCliente, clientePorNome, novaCliente } from './store.js';
@@ -1044,10 +1045,11 @@ telas.aluguel = {
         <button role="radio" aria-checked="${ui.abaAluguel === 'alugueis'}" data-acao="abaAluguel" data-v="alugueis">Aluguéis ativos (${ativos.length})</button>
       </div>
       ${ui.abaAluguel === 'pecas' ? `
+        ${s.pecas.length ? `<a class="btn sec largo" href="#/catalogo">Montar catálogo para a cliente</a>` : ''}
         ${s.pecas.length ? `<div class="lista">${s.pecas.map((p) => {
           const sit = situacaoPeca(s.alugueis, p.id);
           const detalhe = sit.k === 'cliente' ? `devolve ${diaMes(sit.ate)}` : sit.proxima ? `próxima reserva ${diaMes(sit.proxima)}` : '';
-          return `<a class="linha-lista com-foto" href="#/peca/${p.id}">${p.fotos?.length ? `<span class="mini-lista"><img data-foto="${p.fotos[0]}" alt=""></span>` : `<span class="mini-lista vazia">${ico('camera')}</span>`}<div><b>${esc(p.nome)}</b><span>${[p.tamanho && `Tam. ${esc(p.tamanho)}`, p.cor && esc(p.cor)].filter(Boolean).join(' · ') || '&nbsp;'}</span></div>
+          return `<a class="linha-lista com-foto" href="#/peca/${p.id}">${p.fotos?.length ? `<span class="mini-lista"><img data-foto="${p.fotos[0]}" alt=""></span>` : `<span class="mini-lista vazia">${ico('camera')}</span>`}<div><b>${esc(p.nome)}</b><span>${[p.tamanho && `Tam. ${esc(p.tamanho)}`, p.cor && esc(p.cor), valorTxt(p.valor)].filter(Boolean).join(' · ') || '&nbsp;'}</span></div>
             <div class="dir"><span class="pill ${PILL_SIT[sit.k]}">${sit.texto}</span>${detalhe ? `<span>${detalhe}</span>` : ''}</div></a>`;
         }).join('')}</div>` : '<p class="vazio">Cadastre os vestidos do seu acervo para controlar as datas de cada um.</p>'}
         ${cartao(`<div class="novo-item">${campo('ui.novaPeca', ui.novaPeca, 'text', 'placeholder="Nome da peça, ex.: vestido nude bordado" id="nova-peca"')}<button class="btn" data-acao="addPeca">Cadastrar</button></div>`)}
@@ -1061,6 +1063,65 @@ telas.aluguel = {
   },
   depois() { if (ui.abaAluguel === 'pecas' && ui.focoPeca) { document.getElementById('nova-peca')?.focus(); ui.focoPeca = false; } },
 };
+
+// ---------- Tela: Catálogo de aluguel ----------
+
+const catVazio = () => ({ tamanho: '', cor: '', data: '', fora: [], valores: true, gerado: false });
+function dadosCatalogo() {
+  if (!ui.cat) ui.cat = catVazio();
+  const s = S();
+  const { pecas, reservadas } = filtrarPecas(s.pecas, s.alugueis, ui.cat);
+  const escolhidas = pecas.filter((p) => !ui.cat.fora.includes(p.id));
+  return { pecas, reservadas, escolhidas };
+}
+
+telas.catalogo = {
+  aba: 'aluguel',
+  render() {
+    const s = S();
+    const c = ui.cat || (ui.cat = catVazio());
+    const { pecas, reservadas, escolhidas } = dadosCatalogo();
+    const chips = (campoF, opcoes) => opcoes.length ? `<div class="chips">
+      <button type="button" class="chip ${!c[campoF] ? 'on' : ''}" data-acao="catFiltro" data-campo="${campoF}" data-v="">Todos</button>
+      ${opcoes.map((o) => `<button type="button" class="chip ${c[campoF] === o ? 'on' : ''}" data-acao="catFiltro" data-campo="${campoF}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : '';
+    const tamanhos = opcoesFiltro(s.pecas, 'tamanho');
+    const cores = opcoesFiltro(s.pecas, 'cor');
+    const temValor = escolhidas.some((p) => valorTxt(p.valor));
+    return `
+      ${cab('Catálogo', 'Escolha os vestidos e mande para a cliente.', '#/aluguel')}
+      ${cartao(`<h2>Filtrar</h2>
+        ${tamanhos.length ? `<div class="campo"><span>Tamanho</span>${chips('tamanho', tamanhos)}</div>` : ''}
+        ${cores.length > 1 ? `<div class="campo"><span>Cor</span>${chips('cor', cores)}</div>` : ''}
+        ${rotulo('Data do evento da cliente', campo('ui.cat.data', c.data, 'date'), 'Mostra só os vestidos livres nessa data.')}
+        ${c.data ? '<button class="link" data-acao="catSemData">Tirar a data</button>' : ''}
+        ${!tamanhos.length ? '<p class="ajuda">Preencha o tamanho de cada peça (em Aluguel, toque na peça) para filtrar por tamanho.</p>' : ''}`)}
+      ${cartao(`<div class="cartao-cab"><h2>Vestidos (${escolhidas.length} de ${pecas.length})</h2>
+          ${pecas.length ? `<button class="link" data-acao="catTodos">${escolhidas.length === pecas.length ? 'Desmarcar todos' : 'Marcar todos'}</button>` : ''}</div>
+        ${reservadas ? `<p class="ajuda">${reservadas} vestido${reservadas > 1 ? 's' : ''} reservado${reservadas > 1 ? 's' : ''} nessa data não aparece${reservadas > 1 ? 'm' : ''}.</p>` : ''}
+        ${pecas.length ? `<div class="lista-cat">${pecas.map((p) => {
+          const on = !c.fora.includes(p.id);
+          return `<button type="button" class="item-cat ${on ? 'on' : ''}" data-acao="catMarcar" data-id="${p.id}" aria-pressed="${on}">
+            <span class="bola">${on ? '✓' : ''}</span>
+            ${p.fotos?.length ? `<span class="mini-lista"><img data-foto="${p.fotos[0]}" alt=""></span>` : `<span class="mini-lista vazia">${ico('camera')}</span>`}
+            <span class="txt-cat"><b>${esc(p.nome)}</b><small>${[p.tamanho && `Tam. ${esc(p.tamanho)}`, p.cor && esc(p.cor), valorTxt(p.valor)].filter(Boolean).join(' · ')}${p.fotos?.length ? '' : `${p.tamanho || p.cor || p.valor ? ' · ' : ''}<i>sem foto</i>`}</small></span>
+          </button>`;
+        }).join('')}</div>` : '<p class="vazio">Nenhum vestido com esse filtro.</p>'}`)}
+      ${escolhidas.length ? cartao(`<div class="campo"><span>Mostrar os valores no catálogo?</span><div class="chips">
+          <button type="button" class="chip ${c.valores ? 'on' : ''}" data-acao="catValores" data-v="1">Sim</button>
+          <button type="button" class="chip ${!c.valores ? 'on' : ''}" data-acao="catValores" data-v="">Não</button></div>
+          ${c.valores && !temValor ? '<p class="ajuda">Nenhum vestido escolhido tem valor. Coloque em Aluguel, tocando na peça.</p>' : ''}</div>
+        <button class="btn grande" data-acao="gerarCatalogo">Gerar catálogo (${escolhidas.length} vestido${escolhidas.length > 1 ? 's' : ''})</button>
+        <div id="catalogo-pronto" hidden>
+          <div id="previa-catalogo"></div>
+          <div class="acoes coluna">
+            <button class="btn grande" data-acao="mandarCatalogo">Mandar o catálogo (PDF)</button>
+          </div>
+        </div>`) : ''}
+    `;
+  },
+};
+
+let catalogoPdf = null;
 
 function calendario(ym, alugueis) {
   const [a, m] = ym.split('-').map(Number);
@@ -1100,6 +1161,7 @@ telas.peca = {
       ${cartao(`<h2>Dados da peça</h2>
         ${rotulo('Nome', campo(`${b}.nome`, p.nome))}
         <div class="duplo">${rotulo('Tamanho', campo(`${b}.tamanho`, p.tamanho))}${rotulo('Cor', campo(`${b}.cor`, p.cor))}</div>
+        ${rotulo('Valor do aluguel', campo(`${b}.valor`, p.valor, 'text', 'inputmode="decimal" placeholder="Ex.: 450"'), 'Aparece no catálogo, se você quiser.')}
         ${rotulo('Observações', area(`${b}.obs`, p.obs, 'placeholder="Ex.: barra feita para salto 12"'))}`)}
       <div class="acoes"><button class="btn perigo" data-acao="apagarPeca">Apagar peça</button></div>
     `;
@@ -1736,6 +1798,51 @@ const acoes = {
   comecarNovo() { ui.novo = null; },
   meses(el) { ui.inicioMeses = somaMeses(ui.inicioMeses, Number(el.dataset.d)); render(); },
   abrirData(el) { ui.abrirData = `${itemDaRota().id}:${el.dataset.k}`; render(); document.querySelector(`[data-bind$="etapas#${el.dataset.k}.data"]`)?.focus(); },
+  catFiltro(el) { ui.cat[el.dataset.campo] = el.dataset.v; ui.cat.gerado = false; render(); },
+  catSemData() { ui.cat.data = ''; ui.cat.gerado = false; render(); },
+  catMarcar(el) {
+    const f = ui.cat.fora; const i = f.indexOf(el.dataset.id);
+    if (i >= 0) f.splice(i, 1); else f.push(el.dataset.id);
+    ui.cat.gerado = false; const y = window.scrollY; render(); window.scrollTo(0, y);
+  },
+  catTodos() {
+    const { pecas, escolhidas } = dadosCatalogo();
+    ui.cat.fora = escolhidas.length === pecas.length ? pecas.map((p) => p.id) : [];
+    ui.cat.gerado = false; const y = window.scrollY; render(); window.scrollTo(0, y);
+  },
+  catValores(el) { ui.cat.valores = !!el.dataset.v; ui.cat.gerado = false; const y = window.scrollY; render(); window.scrollTo(0, y); },
+  async gerarCatalogo(el) {
+    const { escolhidas } = dadosCatalogo();
+    if (!escolhidas.length) return toast('Marque pelo menos um vestido.');
+    el.disabled = true; el.textContent = 'Montando o catálogo…';
+    try {
+      const itens = [];
+      for (const p of escolhidas) {
+        const url = p.fotos?.length ? await enderecoFoto(p.fotos[0]).catch(() => '') : '';
+        itens.push({ peca: p, img: url ? await carregarImagem(url) : null });
+      }
+      const a = S().atelie;
+      const paginas = await paginasCatalogo(itens, { atelie: a.nome, whats: a.whatsapp, sub: subtitulo(ui.cat), mostrarValor: ui.cat.valores });
+      const blob = await pdfDePaginas(paginas);
+      const nome = `catalogo${ui.cat.tamanho ? `-tam-${ui.cat.tamanho}` : ''}.pdf`.replace(/[^\w.-]+/g, '-').toLowerCase();
+      catalogoPdf = { blob, nome };
+      ui.cat.gerado = true;
+      const pronto = document.getElementById('catalogo-pronto');
+      const previa = document.getElementById('previa-catalogo');
+      previa.innerHTML = '';
+      for (const pg of paginas) { const im = document.createElement('img'); im.className = 'previa-img previa-ficha'; im.alt = 'Página do catálogo'; im.src = pg.toDataURL('image/jpeg', 0.8); previa.appendChild(im); }
+      pronto.hidden = false;
+      pronto.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    } catch { toast('Não foi possível montar o catálogo.'); }
+    el.disabled = false; el.textContent = `Gerar de novo (${escolhidas.length} vestido${escolhidas.length > 1 ? 's' : ''})`;
+  },
+  async mandarCatalogo() {
+    if (!catalogoPdf) return;
+    const arq = new File([catalogoPdf.blob], catalogoPdf.nome, { type: 'application/pdf' });
+    if (navigator.canShare?.({ files: [arq] })) {
+      try { await navigator.share({ files: [arq] }); } catch (e) { if (e.name !== 'AbortError') toast('Não foi possível compartilhar.'); }
+    } else { store.baixar(catalogoPdf.blob, catalogoPdf.nome); toast('Catálogo baixado'); }
+  },
   abaAluguel(el) { ui.abaAluguel = el.dataset.v; render(); },
   mesPeca(el) {
     const [a, m] = ui.mesPeca.split('-').map(Number);

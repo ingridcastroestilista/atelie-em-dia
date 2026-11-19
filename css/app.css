@@ -477,3 +477,15 @@ button.voltar { background: none; border: 0; cursor: pointer; font-family: inher
 .prova-tit b { font-size: 17px; }
 .prova-tit small { color: var(--ink-3, #8A817C); font-size: 14px; }
 .prova-bloco textarea { width: 100%; }
+
+/* Catálogo de aluguel */
+.btn.largo { display: flex; width: 100%; justify-content: center; margin: 0 0 12px; }
+.lista-cat { display: grid; }
+.item-cat { display: flex; align-items: center; gap: 12px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; font: inherit; color: var(--ink); cursor: pointer; width: 100%; }
+.item-cat:last-child { border-bottom: 0; }
+.item-cat:not(.on) .mini-lista, .item-cat:not(.on) .txt-cat { opacity: .45; }
+.item-cat.on .bola { background: var(--marsala); }
+.txt-cat { display: grid; gap: 2px; min-width: 0; }
+.txt-cat b { font-weight: 600; }
+.txt-cat small { color: var(--ink-2); font-size: 14px; }
+#previa-catalogo { display: grid; gap: 12px; margin: 16px 0 8px; }
