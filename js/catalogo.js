@@ -3,6 +3,10 @@
 
 import { conflitos, somaDias, prazos, dataBR } from './regras.js';
 
+// Tipo de cada vestido do acervo.
+export const TIPOS_PECA = [['noiva', 'Noiva'], ['festa', 'Festa']];
+export const nomeTipo = (k) => (TIPOS_PECA.find((t) => t[0] === k) || [])[1] || '';
+
 const normal = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 
 // Tamanhos e cores que existem no acervo, para os botões de filtro (na ordem: números primeiro).
@@ -20,9 +24,13 @@ export function livreNaData(alugueis, pecaId, data) {
   return !conflitos(alugueis, pecaId, ini, fim).length;
 }
 
-// filtro: { tamanho, cor, data }. Devolve { pecas, reservadas } (quantas saíram por estarem reservadas).
-export function filtrarPecas(pecas, alugueis, { tamanho = '', cor = '', data = '' } = {}) {
-  const porDados = pecas.filter((p) => (!tamanho || normal(p.tamanho) === normal(tamanho)) && (!cor || normal(p.cor) === normal(cor)));
+// Busca pelo nome, tamanho ou cor (sem diferença de acento e maiúscula).
+export const textoBusca = (p) => normal([p.nome, p.tamanho, p.cor, nomeTipo(p.tipo)].join(' '));
+export const achaPeca = (p, q) => !normal(q) || normal(q).split(/\s+/).every((t) => textoBusca(p).includes(t));
+
+// filtro: { tipo, tamanho, cor, data }. Devolve { pecas, reservadas } (quantas saíram por estarem reservadas).
+export function filtrarPecas(pecas, alugueis, { tipo = '', tamanho = '', cor = '', data = '' } = {}) {
+  const porDados = pecas.filter((p) => (!tipo || p.tipo === tipo) && (!tamanho || normal(p.tamanho) === normal(tamanho)) && (!cor || normal(p.cor) === normal(cor)));
   const livres = porDados.filter((p) => livreNaData(alugueis, p.id, data));
   return { pecas: livres, reservadas: porDados.length - livres.length };
 }
@@ -38,8 +46,8 @@ const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL',
 export const valorTxt = (v) => { const n = lerValor(v); return n === null ? '' : BRL.format(n); };
 
 // Linha de baixo do título: "Tamanho 42 · Livres em 12/03/2027"
-export function subtitulo({ tamanho, cor, data }) {
-  return [tamanho && `Tamanho ${tamanho}`, cor && cor, data && `Livres em ${dataBR(data)}`].filter(Boolean).join(' · ');
+export function subtitulo({ tipo, tamanho, cor, data }) {
+  return [tipo && `Vestidos de ${nomeTipo(tipo).toLowerCase()}`, tamanho && `Tamanho ${tamanho}`, cor && cor, data && `Livres em ${dataBR(data)}`].filter(Boolean).join(' · ');
 }
 
 // ---------- Desenho das páginas ----------

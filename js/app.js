@@ -1,7 +1,7 @@
 import * as store from './store.js';
 import { protegerApp } from './acesso.js';
 import { conteudoFicha, imagemFicha, conteudoPeca, imagensPeca, normalizarPlano, AVIAMENTOS_COMUNS, CROQUIS } from './ficha.js';
-import { opcoesFiltro, filtrarPecas, valorTxt, subtitulo, paginasCatalogo, pdfDePaginas } from './catalogo.js';
+import { opcoesFiltro, filtrarPecas, valorTxt, subtitulo, paginasCatalogo, pdfDePaginas, TIPOS_PECA, nomeTipo, achaPeca } from './catalogo.js';
 import { guardarFoto, enderecoFoto, apagarFoto, limparSoltas } from './fotos.js';
 import { tipoLembrete, conteudoLembrete, textoLembrete, imagemLembrete, ORIENTACOES_PADRAO } from './lembrete.js';
 import { uid, agora, tocar, MEDIDAS, GRUPOS_MEDIDAS, acharCliente, clientePorNome, novaCliente } from './store.js';
@@ -17,7 +17,7 @@ const $main = document.getElementById('main');
 
 // Estado só da tela (não é guardado).
 const ui = {
-  busca: '', filtroEnc: 'andamento', abaAluguel: 'pecas', mesPeca: hojeISO().slice(0, 7), novo: null, medicao: null, notas: null, novaPeca: '',
+  busca: '', filtroEnc: 'andamento', abaAluguel: 'pecas', mesPeca: hojeISO().slice(0, 7), novo: null, medicao: null, notas: null, novaPeca: '', buscaPeca: '', tipoPeca: '',
   inicioMeses: hojeISO().slice(0, 7), abrirData: null,
   editEtapas: null, novaEtapa: '', novaEtapaProva: false, nomeModelo: '', // personalizar etapas
   editPlano: null, recem: null, novaCliente: { nome: '', whatsapp: '' }, // recem: { id } do que acabou de ser cadastrado // abrirData: 'id:k' da etapa com "+ data" aberto
@@ -1046,13 +1046,22 @@ telas.aluguel = {
       </div>
       ${ui.abaAluguel === 'pecas' ? `
         ${s.pecas.length ? `<a class="btn sec largo" href="#/catalogo">Montar catálogo para a cliente</a>` : ''}
-        ${s.pecas.length ? `<div class="lista">${s.pecas.map((p) => {
+        ${s.pecas.length > 1 ? (() => {
+          const conta = (k) => s.pecas.filter((p) => (k === 'sem' ? !p.tipo : p.tipo === k)).length;
+          const sem = conta('sem');
+          const op = [['', `Todos (${s.pecas.length})`], ...TIPOS_PECA.map(([k, n]) => [k, `${n} (${conta(k)})`]), ...(sem && sem < s.pecas.length ? [['sem', `Sem tipo (${sem})`]] : [])];
+          return `<div class="chips filtro-pecas">${op.map(([k, n]) => `<button type="button" class="chip ${ui.tipoPeca === k ? 'on' : ''}" data-acao="tipoLista" data-v="${k}">${n}</button>`).join('')}</div>
+            <div class="busca">${campo('ui.buscaPeca', ui.buscaPeca, 'search', 'placeholder="Buscar vestido: nome, tamanho ou cor" aria-label="Buscar vestido" id="busca-peca"')}</div>`;
+        })() : ''}
+        ${s.pecas.length ? `<div class="lista" id="lista-pecas">${s.pecas.filter((p) => !ui.tipoPeca || (ui.tipoPeca === 'sem' ? !p.tipo : p.tipo === ui.tipoPeca)).map((p) => {
           const sit = situacaoPeca(s.alugueis, p.id);
           const detalhe = sit.k === 'cliente' ? `devolve ${diaMes(sit.ate)}` : sit.proxima ? `próxima reserva ${diaMes(sit.proxima)}` : '';
-          return `<a class="linha-lista com-foto" href="#/peca/${p.id}">${p.fotos?.length ? `<span class="mini-lista"><img data-foto="${p.fotos[0]}" alt=""></span>` : `<span class="mini-lista vazia">${ico('camera')}</span>`}<div><b>${esc(p.nome)}</b><span>${[p.tamanho && `Tam. ${esc(p.tamanho)}`, p.cor && esc(p.cor), valorTxt(p.valor)].filter(Boolean).join(' · ') || '&nbsp;'}</span></div>
+          return `<a class="linha-lista com-foto" href="#/peca/${p.id}" data-id="${p.id}" ${achaPeca(p, ui.buscaPeca) ? '' : 'hidden'}>${p.fotos?.length ? `<span class="mini-lista"><img data-foto="${p.fotos[0]}" alt=""></span>` : `<span class="mini-lista vazia">${ico('camera')}</span>`}<div><b>${esc(p.nome)}</b><span>${[nomeTipo(p.tipo), p.tamanho && `Tam. ${esc(p.tamanho)}`, p.cor && esc(p.cor), valorTxt(p.valor)].filter(Boolean).join(' · ') || '&nbsp;'}</span></div>
             <div class="dir"><span class="pill ${PILL_SIT[sit.k]}">${sit.texto}</span>${detalhe ? `<span>${detalhe}</span>` : ''}</div></a>`;
-        }).join('')}</div>` : '<p class="vazio">Cadastre os vestidos do seu acervo para controlar as datas de cada um.</p>'}
-        ${cartao(`<div class="novo-item">${campo('ui.novaPeca', ui.novaPeca, 'text', 'placeholder="Nome da peça, ex.: vestido nude bordado" id="nova-peca"')}<button class="btn" data-acao="addPeca">Cadastrar</button></div>`)}
+        }).join('')}</div>
+        <p class="vazio" id="nada-peca" hidden>Nenhum vestido encontrado.</p>` : '<p class="vazio">Cadastre os vestidos do seu acervo para controlar as datas de cada um.</p>'}
+        ${cartao(`<div class="chips">${TIPOS_PECA.map(([k, n]) => `<button type="button" class="chip ${(ui.novaPecaTipo ?? (ui.tipoPeca !== 'sem' ? ui.tipoPeca : '')) === k ? 'on' : ''}" data-acao="tipoNovaPeca" data-v="${k}">${n}</button>`).join('')}</div>
+          <div class="novo-item">${campo('ui.novaPeca', ui.novaPeca, 'text', 'placeholder="Nome da peça, ex.: vestido nude bordado" id="nova-peca"')}<button class="btn" data-acao="addPeca">Cadastrar</button></div>`)}
       ` : `
         ${ativos.length ? `<div class="lista">${ativos.map((a) => { const p = periodo(a); return `<a class="linha-lista" href="#/locacao/${a.id}">
             <div><b>${esc(nomeCliente(a.clienteId))}</b><span>${esc(nomePeca(a))}</span><span class="passo-txt">${proximoPasso(a)}</span></div>
@@ -1061,12 +1070,25 @@ telas.aluguel = {
       `}
     `;
   },
-  depois() { if (ui.abaAluguel === 'pecas' && ui.focoPeca) { document.getElementById('nova-peca')?.focus(); ui.focoPeca = false; } },
+  depois() { filtrarListaPecas(); if (ui.abaAluguel === 'pecas' && ui.focoPeca) { document.getElementById('nova-peca')?.focus(); ui.focoPeca = false; } },
 };
+
+// Busca na lista de vestidos, sem redesenhar a tela (o teclado continua aberto).
+function filtrarListaPecas() {
+  const lista = document.getElementById('lista-pecas');
+  if (!lista) return;
+  let vistos = 0;
+  lista.querySelectorAll('.linha-lista').forEach((a) => {
+    const p = S().pecas.find((x) => x.id === a.dataset.id);
+    a.hidden = !p || !achaPeca(p, ui.buscaPeca);
+    if (!a.hidden) vistos++;
+  });
+  document.getElementById('nada-peca').hidden = vistos > 0;
+}
 
 // ---------- Tela: Catálogo de aluguel ----------
 
-const catVazio = () => ({ tamanho: '', cor: '', data: '', fora: [], valores: true, gerado: false });
+const catVazio = () => ({ tipo: '', tamanho: '', cor: '', data: '', fora: [], valores: true, gerado: false });
 function dadosCatalogo() {
   if (!ui.cat) ui.cat = catVazio();
   const s = S();
@@ -1084,12 +1106,16 @@ telas.catalogo = {
     const chips = (campoF, opcoes) => opcoes.length ? `<div class="chips">
       <button type="button" class="chip ${!c[campoF] ? 'on' : ''}" data-acao="catFiltro" data-campo="${campoF}" data-v="">Todos</button>
       ${opcoes.map((o) => `<button type="button" class="chip ${c[campoF] === o ? 'on' : ''}" data-acao="catFiltro" data-campo="${campoF}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : '';
+    const tipos = TIPOS_PECA.filter(([k]) => s.pecas.some((p) => p.tipo === k));
     const tamanhos = opcoesFiltro(s.pecas, 'tamanho');
     const cores = opcoesFiltro(s.pecas, 'cor');
     const temValor = escolhidas.some((p) => valorTxt(p.valor));
     return `
       ${cab('Catálogo', 'Escolha os vestidos e mande para a cliente.', '#/aluguel')}
       ${cartao(`<h2>Filtrar</h2>
+        ${tipos.length ? `<div class="campo"><span>Tipo</span><div class="chips">
+          <button type="button" class="chip ${!c.tipo ? 'on' : ''}" data-acao="catFiltro" data-campo="tipo" data-v="">Todos</button>
+          ${tipos.map(([k, n]) => `<button type="button" class="chip ${c.tipo === k ? 'on' : ''}" data-acao="catFiltro" data-campo="tipo" data-v="${k}">${n}</button>`).join('')}</div></div>` : ''}
         ${tamanhos.length ? `<div class="campo"><span>Tamanho</span>${chips('tamanho', tamanhos)}</div>` : ''}
         ${cores.length > 1 ? `<div class="campo"><span>Cor</span>${chips('cor', cores)}</div>` : ''}
         ${rotulo('Data do evento da cliente', campo('ui.cat.data', c.data, 'date'), 'Mostra só os vestidos livres nessa data.')}
@@ -1160,6 +1186,7 @@ telas.peca = {
         <a class="btn sec" href="#/novo/aluguel" data-acao="alugarPeca" data-id="${p.id}">Alugar esta peça</a>`)}
       ${cartao(`<h2>Dados da peça</h2>
         ${rotulo('Nome', campo(`${b}.nome`, p.nome))}
+        <div class="campo"><span>Tipo</span><div class="chips">${TIPOS_PECA.map(([k, n]) => `<button type="button" class="chip ${p.tipo === k ? 'on' : ''}" data-acao="tipoDaPeca" data-v="${k}">${n}</button>`).join('')}</div></div>
         <div class="duplo">${rotulo('Tamanho', campo(`${b}.tamanho`, p.tamanho))}${rotulo('Cor', campo(`${b}.cor`, p.cor))}</div>
         ${rotulo('Valor do aluguel', campo(`${b}.valor`, p.valor, 'text', 'inputmode="decimal" placeholder="Ex.: 450"'), 'Aparece no catálogo, se você quiser.')}
         ${rotulo('Observações', area(`${b}.obs`, p.obs, 'placeholder="Ex.: barra feita para salto 12"'))}`)}
@@ -1850,11 +1877,15 @@ const acoes = {
     ui.mesPeca = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     render();
   },
+  tipoLista(el) { ui.tipoPeca = el.dataset.v; ui.novaPecaTipo = undefined; render(); },
+  tipoNovaPeca(el) { const atual = ui.novaPecaTipo ?? (ui.tipoPeca !== 'sem' ? ui.tipoPeca : ''); ui.novaPecaTipo = atual === el.dataset.v ? '' : el.dataset.v; const y = window.scrollY; render(); window.scrollTo(0, y); },
+  tipoDaPeca(el) { const p = S().pecas.find((x) => x.id === rota().id); p.tipo = p.tipo === el.dataset.v ? '' : el.dataset.v; tocar(p); store.salvar(); const y = window.scrollY; render(); window.scrollTo(0, y); },
   addPeca() {
     const nome = ui.novaPeca.trim();
     if (!nome) return toast('Escreva o nome da peça.');
-    S().pecas.push({ id: uid(), nome, tamanho: '', cor: '', obs: '', criadoEm: agora(), alteradoEm: agora() });
-    ui.novaPeca = ''; ui.focoPeca = true; store.salvar(); toast('Peça cadastrada'); render();
+    const tipo = ui.novaPecaTipo ?? (ui.tipoPeca !== 'sem' ? ui.tipoPeca : '');
+    S().pecas.push({ id: uid(), nome, tipo, tamanho: '', cor: '', obs: '', criadoEm: agora(), alteradoEm: agora() });
+    ui.novaPeca = ''; ui.buscaPeca = ''; ui.focoPeca = true; store.salvar(); toast('Peça cadastrada'); render();
   },
   apagarPeca() {
     const id = rota().id;
@@ -1941,6 +1972,14 @@ document.addEventListener('input', (ev) => {
   // Atualizações parciais, sem tirar o foco do campo.
   if (el.dataset.bind === 'ui.novo.cliente') document.getElementById('sugestoes').innerHTML = sugestoesCliente(el.value);
   if (el.dataset.bind === 'ui.novo.peca' && ui.novo?.pecaId) { ui.novo.pecaId = ''; document.querySelectorAll('.chip.on[data-acao="escolherPeca"]').forEach((c) => c.classList.remove('on')); }
+  if (el.dataset.bind === 'ui.buscaPeca') filtrarListaPecas();
+  // Novo aluguel: enquanto ela escreve o nome, só ficam os vestidos que combinam.
+  if (el.dataset.bind === 'ui.novo.peca') {
+    document.querySelectorAll('[data-acao="escolherPeca"]').forEach((c) => {
+      const p = S().pecas.find((x) => x.id === c.dataset.id);
+      c.hidden = !!p && !achaPeca(p, el.value);
+    });
+  }
   if (el.dataset.bind === 'ui.busca') {
     const q = el.value.trim().toLowerCase();
     document.querySelectorAll('#lista-clientes .linha-lista').forEach((a) => { a.hidden = q && !a.querySelector('b').textContent.toLowerCase().includes(q); });
